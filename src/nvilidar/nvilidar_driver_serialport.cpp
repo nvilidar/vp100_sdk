@@ -994,27 +994,12 @@ namespace vp100_lidar
 			//在线程中要做的事情
 			LidarDriverSerialport *pObj = (LidarDriverSerialport *)lpParameter;   //传入的参数转化为类对象指针
 
-			while (pObj->lidar_state.m_CommOpen)
-			{	
-				//解包处理 === 正常解包 
-				if (! pObj->lidar_state.m_Scanning)	//点云数据包 
-				{
-					//读串口接收数据长度 
-					recv_len = pObj->serialport.serialReadData(recv_data, 8192);
-					if((recv_len > 0) && (recv_len <= 8192))
-					{
-						pObj->NormalDataUnpack(recv_data, recv_len);
-					}
-				}
+			while (pObj->lidar_state.m_CommOpen){	
 				//解包处理 ==== 点云解包 
-				else 
-				{
-					//读串口接收数据长度 
-					recv_len = pObj->serialport.serialReadData(recv_data, 8192);
-					if ((recv_len > 0) && (recv_len <= 8192))
-					{
-						pObj->PointDataUnpack(recv_data, recv_len);
-					}
+				//读串口接收数据长度 
+				recv_len = pObj->serialport.serialReadData(recv_data, 8192);
+				if ((recv_len > 0) && (recv_len <= 8192)){
+					pObj->PointDataUnpack(recv_data, recv_len);
 				}
 
 				delayMS(1);		//必须要加sleep 不然会超高占用cpu	
@@ -1032,8 +1017,7 @@ namespace vp100_lidar
 			//在线程中要做的事情
 			LidarDriverSerialport *pObj = (LidarDriverSerialport *)lpParameter;   //传入的参数转化为类对象指针
 
-			while (pObj->lidar_state.m_CommOpen)
-			{	
+			while (pObj->lidar_state.m_CommOpen){	
 				//解包处理 ==== 点云解包 
 				//读串口接收数据长度 
 				recv_len = pObj->serialport.serialReadData(recv_data, 8192);
@@ -1041,7 +1025,7 @@ namespace vp100_lidar
 					pObj->PointDataUnpack(recv_data, recv_len);
 				}
 
-				delayMS(10);		//必须要加sleep 不然会超高占用cpu	
+				delayMS(1);		//必须要加sleep 不然会超高占用cpu	
 			}
 
 			return 0;

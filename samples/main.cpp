@@ -34,7 +34,11 @@ int main()
 	printf("the srialport baudrate can be 115200bps or 230400bps\n");
 
 	//para 0-serialname  1-baud  2-timestamp callback 4- if ns then 1e9 ,if us the 1e6 ...
-	vp100_lidar::LidarProcess lidar("/dev/ttyUSB0",115200,get_stamp_callback,1e9);
+	#if 1
+		vp100_lidar::LidarProcess lidar("/dev/ttyUSB0",115200,get_stamp_callback,1e9);
+	#else 
+		vp100_lidar::LidarProcess lidar("COM5", 115200, get_stamp_callback, 1e9);
+	#endif 
 
 	//init lidar,include sync lidar para 
 	if (false == lidar.LidarInitialialize())		
