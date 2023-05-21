@@ -97,7 +97,7 @@ typedef struct
 	uint16_t packageSpeed;         //lidar speed 
 	bool     packageHas0CAngle;    //is 0 
 	uint16_t package0CIndex;   		//is 0 index 
-	uint64_t packageStamp;		   //time stamp  
+	uint64_t packageStopStamp;		//time stamp stop  
 }Nvilidar_PointViewerPackageInfoTypeDef;
 
 //circle data  
@@ -105,6 +105,7 @@ typedef struct
 {
 	uint64_t  startStamp;			//One Lap Start Timestamp 
 	uint64_t  stopStamp;			//One Lap Stop Timestamp 
+	uint64_t  differStamp;	  		//differ Timestamp
 	std::vector<Nvilidar_Node_Info>  lidarCircleNodePoints;	//lidar point data
 }CircleDataInfoTypeDef;
 
@@ -123,6 +124,8 @@ typedef struct {
 	float range;
 	/// lidar intensity
 	float intensity;
+	/// stamp 
+	uint64_t stamp;
 } NviLidarPoint;
 
 /**
@@ -151,7 +154,9 @@ typedef struct {
 
 typedef struct {
 	/// System time when first range was measured in nanoseconds
-	uint64_t stamp;
+	uint64_t stamp_start;
+	uint64_t stamp_stop;
+	uint64_t stamp_differ;
 	/// Array of lidar points
 	std::vector<NviLidarPoint> points;
 	/// Configuration of scan

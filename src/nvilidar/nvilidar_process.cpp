@@ -10,7 +10,7 @@
 
 namespace vp100_lidar
 {
-	LidarProcess::LidarProcess(std::string serialport_name,uint32_t baudrate)
+	LidarProcess::LidarProcess(std::string serialport_name,uint32_t baudrate,get_timestamp_function func,uint64_t unit)
 	{
 		//lidar para 
 		Nvilidar_UserConfigTypeDef  cfg;
@@ -19,8 +19,12 @@ namespace vp100_lidar
 
 		cfg.serialport_name = serialport_name;		//serialport name 
 		cfg.serialport_baud = baudrate;	//serialport baud  
+		get_timestamp = func;
+		time_unit = unit;
 
-		lidar_serial.LidarLoadConfig(cfg);	//serialport  
+		if(func != nullptr){
+			lidar_serial.LidarLoadConfig(cfg,get_timestamp,unit);	//serialport  
+		}
 	}
 	LidarProcess::~LidarProcess()
 	{
@@ -239,7 +243,9 @@ namespace vp100_lidar
 	//=============================ROS interface,for reload the parameter ===========================================
 	void LidarProcess::LidarReloadPara(Nvilidar_UserConfigTypeDef cfg){
 		LidarParaSync(cfg);
-		lidar_serial.LidarLoadConfig(cfg);	//serialport  
+		if(get_timestamp != nullptr){
+			lidar_serial.LidarLoadConfig(cfg,get_timestamp,time_unit);	//serialport  
+		}
 	}
 }
 

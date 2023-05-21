@@ -32,7 +32,6 @@ struct Nvilidar_Node_Info
     uint16_t   lidar_quality;             //信号质量
     float      lidar_angle;               //测距点角度
     uint16_t   lidar_distance;            //当前测距点距离
-    uint64_t   lidar_stamp;               //时间戳
     float      lidar_speed;               //扫描频率
     uint32_t   lidar_point_time;          //2点时间间隔
     uint8_t    lidar_index;               //当前索引  

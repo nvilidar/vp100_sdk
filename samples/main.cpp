@@ -3,13 +3,16 @@
 #include "nvilidar_process.h"
 #include "mysignal.h"
 
-
-using namespace std;
 using namespace vp100_lidar;
 
 #if defined(_MSC_VER)
 #pragma comment(lib, "nvilidar_driver.lib")
 #endif
+
+//get stamp 
+uint64_t  get_stamp_callback(){
+	return getStamp();
+}
 
 
 int main()
@@ -30,8 +33,8 @@ int main()
 	printf("Current sdk supports vp100 lidar \n");
 	printf("the srialport baudrate can be 115200bps or 230400bps\n");
 
-
-	vp100_lidar::LidarProcess lidar("/dev/ttyUSB0",115200);
+	//para 0-serialname  1-baud  2-timestamp callback 4- if ns then 1e9 ,if us the 1e6 ...
+	vp100_lidar::LidarProcess lidar("/dev/ttyUSB0",115200,get_stamp_callback,1e9);
 
 	//init lidar,include sync lidar para 
 	if (false == lidar.LidarInitialialize())		
@@ -53,12 +56,13 @@ int main()
 			{
 				for (size_t i = 0; i < scan.points.size(); i++)
 				{
-					//float angle = scan.points.at(i).angle;
-					//float dis = scan.points.at(i).range;
-					//printf("a:%f,d:%f\n", angle, dis);
+					// float angle = scan.points.at(i).angle;
+					// float dis = scan.points.at(i).range;
+					// uint64_t stamp = scan.points.at(i).stamp;
+					// printf("a:%f,d:%f,stamp:%lu\n", angle, dis,stamp);
 				}
-				vp100_lidar::console.message("Scan received[%llu]: %u ranges is [%f]Hz",
-					scan.stamp, (unsigned int)scan.points.size(),
+				printf("Scan received[start:%lu | stop:%lu | differ:%lu]: %u ranges is [%f]Hz\n",
+					scan.stamp_start, scan.stamp_stop,scan.stamp_differ,(unsigned int)scan.points.size(),
 					1.0 / scan.config.scan_time);
 			}
 			else 
@@ -72,7 +76,7 @@ int main()
 			break;
 		}
 
-		delayMS(5);		//add sleep,otherwise high cpu 
+		delayMS(1);		//add sleep,otherwise high cpu 
 	}
 	lidar.LidarTurnOff();       //stop scan 
 	vp100_lidar::console.message("Lidar is Stopping......");

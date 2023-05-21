@@ -9,7 +9,7 @@
 namespace vp100_lidar
 {
 	LidarDriverSerialport::LidarDriverSerialport(){
-		lidar_state.m_CommOpen = false;          
+		lidar_state.m_CommOpen = false;    
 	}
 
 	LidarDriverSerialport::~LidarDriverSerialport(){
@@ -17,8 +17,10 @@ namespace vp100_lidar
 	}
 
 	//load para 
-	void LidarDriverSerialport::LidarLoadConfig(Nvilidar_UserConfigTypeDef cfg){
-		lidar_cfg = cfg;                   
+	void LidarDriverSerialport::LidarLoadConfig(Nvilidar_UserConfigTypeDef cfg,get_timestamp_serial_function func,uint64_t unit){
+		lidar_cfg = cfg;  
+		get_timestamp = func;  
+		time_unit = unit;                     
 	}
 
 	//is lidar connected 
@@ -386,7 +388,11 @@ namespace vp100_lidar
 
 							//get timestamp 
 							if (pack_info.packageHas0CAngle){
-								pack_info.packageStamp = getStamp();
+								if(get_timestamp != nullptr){
+									pack_info.packageStopStamp = get_timestamp();
+								}else{
+									pack_info.packageStopStamp = 0;
+								}
 							}
 							//points analysis 
 							PointDataAnalysis(pack_info);
@@ -464,7 +470,11 @@ namespace vp100_lidar
 
 							//get timestamp 
 							if (pack_info.packageHas0CAngle){
-								pack_info.packageStamp = getStamp();
+								if(get_timestamp != nullptr){
+									pack_info.packageStopStamp = get_timestamp();
+								}else{
+									pack_info.packageStopStamp = 0;
+								}
 							}
 							//points analysis 
 							PointDataAnalysis(pack_info);
@@ -544,7 +554,7 @@ namespace vp100_lidar
 
 			//get time stamp 
 			circleDataInfo.startStamp = circleDataInfo.stopStamp;
-			circleDataInfo.stopStamp = pack_point.packageStamp;
+			circleDataInfo.stopStamp = pack_point.packageStopStamp;
 			//按比例重算结束时间 因为一包固定128点 0位可能出在任意位置  会影响时间戳精确度 
 			//printf("pack_num:%d,indx:%d\r\n", circleDataInfo.lidarCircleNodePoints.size(), pack_point.package0CIndex);
 
@@ -835,6 +845,7 @@ namespace vp100_lidar
 	void LidarDriverSerialport::LidarSamplingData(CircleDataInfoTypeDef info, LidarScan &outscan){
 		uint32_t all_nodes_counts = 0;		//所有点数  不做截取等用法 
 		uint64_t scan_time = 0;				//2圈点的扫描间隔  
+		uint64_t point_stamp = 0;			//point stamp 
 
 		//扫描时间 
 		scan_time = info.stopStamp - info.startStamp;
@@ -861,13 +872,24 @@ namespace vp100_lidar
 		}
 
 		//以角度为比例  计算输出信息 
-		outscan.stamp = info.startStamp;
-		outscan.config.max_angle = lidar_cfg.angle_max*M_PI / 180.0;			//计算最大角度  				
-		outscan.config.min_angle = lidar_cfg.angle_min*M_PI / 180.0;			//计算最小角度  
-		outscan.config.angle_increment = 2.0 * M_PI/(double)(all_nodes_counts - 1);	//计算2点之间的角度增量 
-			
-		outscan.config.scan_time = static_cast<float>(1.0 * scan_time / 1e9);  	//扫描时间信息  
-		outscan.config.time_increment = outscan.config.scan_time / (double)(all_nodes_counts - 1); 	//2点之间的时间 
+		outscan.stamp_start = info.startStamp;
+		outscan.stamp_stop = info.stopStamp;
+		if((all_nodes_counts > 1) && (info.startStamp > 0)){
+			info.differStamp = (info.stopStamp - info.startStamp)/(all_nodes_counts - 1);   //get the differ value 
+		}else{
+			info.differStamp = 0;
+		}
+		outscan.stamp_differ = info.differStamp;
+
+		outscan.config.max_angle = lidar_cfg.angle_max*M_PI / 180.0;			//max angle 				
+		outscan.config.min_angle = lidar_cfg.angle_min*M_PI / 180.0;			//min angle   
+		outscan.config.angle_increment = 2.0 * M_PI/(double)(all_nodes_counts - 1);	//2 points increment 
+		if(time_unit > 0){
+			outscan.config.scan_time = static_cast<float>(1.0 * scan_time / time_unit);  	//scan time  
+		}else{
+			outscan.config.scan_time = static_cast<float>(1.0 * scan_time / 1e9);
+		}
+		outscan.config.time_increment = outscan.config.scan_time / (double)(all_nodes_counts - 1); 	//2 point time increment
 		outscan.config.min_range = lidar_cfg.range_min;
 		outscan.config.max_range = lidar_cfg.range_max;
 
@@ -885,6 +907,7 @@ namespace vp100_lidar
 			intensity = static_cast<float>(info.lidarCircleNodePoints.at(i).lidar_quality);
 			angle = static_cast<float>(info.lidarCircleNodePoints.at(i).lidar_angle);
 			angle = angle * M_PI / 180.0;
+			point_stamp = static_cast<uint64_t>(info.startStamp + (i*info.differStamp));
 
 			//Rotate 180 degrees or not
 			if (lidar_cfg.reversion)
@@ -936,6 +959,7 @@ namespace vp100_lidar
 				point.angle = angle;
 				point.range = dist;
 				point.intensity = intensity;
+				point.stamp = point_stamp;
 
 				outscan.points.push_back(point);
 			}

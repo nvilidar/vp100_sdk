@@ -42,8 +42,11 @@ typedef struct
 	#define NVILIDAR_DRIVER_SERIAL_API
 #endif // ifdef WIN32
 
+
 namespace vp100_lidar
 {
+	typedef uint64_t (*get_timestamp_serial_function)(void);   //timestamp callback 
+
     //lidar driver 
 	class  NVILIDAR_DRIVER_SERIAL_API LidarDriverSerialport
     {
@@ -51,7 +54,7 @@ namespace vp100_lidar
 			LidarDriverSerialport();                
 			~LidarDriverSerialport();          
 
-			void LidarLoadConfig(Nvilidar_UserConfigTypeDef cfg);
+			void LidarLoadConfig(Nvilidar_UserConfigTypeDef cfg,get_timestamp_serial_function func,uint64_t unit = 1e9);
 			bool LidarIsConnected();			//is lidar connected 
 			bool LidarGetScanState();			//is lidar transing data 
 			bool LidarInitialialize();			//lidar init 
@@ -102,6 +105,10 @@ namespace vp100_lidar
 			uint32_t    m_differ0cIndex = 0;            //0 index
 			bool        m_first_circle_finish = false;  //first circle finish,case calc fault
 			uint64_t	m_run_circles = 0;				//has send data   
+
+			//---------------------callback function----------------
+			get_timestamp_serial_function  get_timestamp = nullptr;
+			uint64_t                time_unit = 1e9;		  //unit 
 
 			//---------------------thread---------------------------
 			#if defined(_WIN32)

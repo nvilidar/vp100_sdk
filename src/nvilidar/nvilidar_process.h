@@ -22,11 +22,13 @@
 
 namespace vp100_lidar
 {
+	typedef uint64_t (*get_timestamp_function)(void);   //timestamp callback 
+
     //lidar driver 
 	class  NVILIDAR_API LidarProcess
     {
 		public:
-			LidarProcess(std::string serialport_name,uint32_t baudrate);		//para     name - serial_name   baud - serial_baudrate
+			LidarProcess(std::string serialport_name,uint32_t baudrate,get_timestamp_function func,uint64_t unit = 1e9);		//para     name - serial_name   baud - serial_baudrate
 			~LidarProcess();
 
 			bool LidarInitialialize();			//雷达初始化 包括读及写参数等等功能 
@@ -43,6 +45,9 @@ namespace vp100_lidar
 		private:
 			LidarDriverSerialport	lidar_serial;	//SERIALPORT
 			bool  auto_reconnect_flag = false;		//auto reconnect 
+			//---------------------callback function----------------
+			get_timestamp_function  get_timestamp = nullptr;  //stamp 
+			uint64_t                time_unit = 1e9;		  //unit 
 
 			void LidarParaSync(Nvilidar_UserConfigTypeDef &cfg);		//同步参数信息  主要用于ros 
 			void LidarDefaultUserConfig(Nvilidar_UserConfigTypeDef &cfg);		//获取默认参数  可以在此修改
