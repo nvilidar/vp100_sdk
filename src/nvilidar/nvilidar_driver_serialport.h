@@ -82,7 +82,11 @@ namespace vp100_lidar
 			void FlushSerial();		//flush serialport data 
 			bool SendCommand(uint8_t cmd, uint8_t *payload = NULL,uint16_t payloadsize = 0);
 			void PointDataUnpack(uint8_t *byte, uint16_t len);		//unpack（point cloud）
-			void PointDataAnalysis(Nvilidar_PointViewerPackageInfoTypeDef data);	
+
+			void PointCloudAnalysis_Normal_NoQuality(VP100_Node_Package_Union *pack);    		 //no quality 
+			void PointCloudAnalysis_Normal_Quality(VP100_Node_Package_Union *pack_buf_union);	 //has quality 	
+			void PointCloudAnalysis_YW_Quality(VP100_Node_Package_Union *pack_buf_union);		 //yw quality 		
+			void PointCloudAnalysis_FS_Test_Quality(VP100_Node_Package_Union *pack_buf_union);	 //fs quality 
 			
 			//thread  
 			bool createThread();		//create thread 
@@ -103,8 +107,18 @@ namespace vp100_lidar
 			uint32_t    m_0cIndex = 0;                  //0 index
 			int32_t     m_last0cIndex = 0;              //0 index
 			uint32_t    m_differ0cIndex = 0;            //0 index
-			bool        m_first_circle_finish = false;  //first circle finish,case calc fault
-			uint64_t	m_run_circles = 0;				//has send data   
+			bool        m_first_circle_finish = false;  //first circle finish,case calc fault 
+
+			//receive value 
+			VP100_Node_Package_Union			    pack_buf_union;	 //pack buf info  
+			double  last_angle_point = 0;							 //last angle 
+			int     recv_pos = 0;									 //receive pos 
+			int     lidar_model_code = 0;						 	 //lidar model code 
+			uint32_t pack_size = 0;									 //the one pack bytes 
+			//get point list  
+			std::vector<Nvilidar_Node_Info> 		node_point_list; //node points list 
+			int curr_circle_count = 0;								 //test variable 
+			int curr_pack_count = 0;								 //test variable 
 
 			//---------------------callback function----------------
 			get_timestamp_serial_function  get_timestamp = nullptr;

@@ -56,7 +56,6 @@ namespace vp100_lidar
 
 	//lidar start  
 	bool LidarDriverSerialport::LidarTurnOn(){
-		m_run_circles = 0;
 		//success 
 		vp100_lidar::console.message("[NVILIDAR INFO] Now NVILIDAR is scanning ......");
 
@@ -65,8 +64,6 @@ namespace vp100_lidar
 
 	//lidar stop 
 	bool LidarDriverSerialport::LidarTurnOff(){
-		m_run_circles = 0;
-
 		return true;
 	}
 
@@ -194,298 +191,155 @@ namespace vp100_lidar
 
 	//send data 
 	bool LidarDriverSerialport::SendCommand(uint8_t cmd, uint8_t *payload, uint16_t payloadsize){
-		static uint8_t temp_buf[1024];
-		uint8_t checksum = 0;
+		uint8_t temp_buf[256];
+		uint8_t temp_crc = 0;
 
 		//serialport not open 
-		if (!lidar_state.m_CommOpen)
-		{
+		if (!lidar_state.m_CommOpen){
 			return false;
 		}
 
-		// if ((payload != nullptr) && (payloadsize > 0))   //command long or short 
-		// {
-		// 	temp_buf[0] = NVILIDAR_START_BYTE_LONG_CMD;
-		// 	temp_buf[1] = cmd;
-		// 	temp_buf[2] = (uint8_t)(payloadsize & 0xFF);
-		// 	temp_buf[3] = (uint8_t)(payloadsize >> 8);
+		if((payload == nullptr) && (payloadsize == 0)){
+			temp_buf[0] = 0xA5;
+			temp_buf[1] = 0x5A;
+			temp_buf[2] = cmd;
+			temp_buf[3] = 0x00;
+			for(int i = 0; i<4; i++){
+				temp_crc += temp_buf[i];
+			}
+			temp_buf[4] = temp_crc;
+			SendSerial((uint8_t *)temp_buf,5);
 
-		// 	for(int i = 0; i<payloadsize; i++){
-		// 		temp_buf[4+i] = payload[i];
-		// 		checksum ^= payload[i];
-		// 	}
-		// 	temp_buf[4+payloadsize] = checksum;
-		// 	temp_buf[5+payloadsize] = NVILIDAR_END_CMD;
+		}else if((payload != nullptr) && (payloadsize > 0)){
+			temp_buf[0] = 0xA5;
+			temp_buf[1] = 0x5A;
+			temp_buf[2] = cmd;
+			temp_buf[3] = payloadsize;
+			for(int i = 0; i< payloadsize; i++){
+				temp_buf[4+i] = payload[i];
+			}
+			for(int i = 0; i<4+payloadsize; i++){
+				temp_crc += payload[i];
+			}
+			temp_buf[4+payloadsize] = temp_crc;
 
-		// 	SendSerial(temp_buf,6+payloadsize);
-		// }
-		// else
-		// {
-		// 	//short command 
-		// 	temp_buf[0] = NVILIDAR_START_BYTE_SHORT_CMD;
-		// 	temp_buf[1] = cmd;
-			
-		// 	SendSerial(temp_buf, 2);
-		// }
+			SendSerial((uint8_t *)temp_buf,5+payloadsize);
+		}
 
 		return true;
 	}
 
 	//analysis point 
 	void LidarDriverSerialport::PointDataUnpack(uint8_t *buf,uint16_t len){
-		static Nvilidar_PointViewerPackageInfoTypeDef  pack_info;        //pack info 
-		static Nvilidar_Node_Package_Union			   pack_buf_union;	 //pack buf info  
-		static double  pack_last_angle_no_qua = 0;
-		static double  pack_last_angle_has_qua = 0;
 
-		static int         recv_pos = 0;								//receive pos 
+		//check the size is zero?
+		if(0 == len){
+			return;
+		}
 
 		//loop 
-		for (int pos = 0; pos < len; pos++)
-		{
+		for(uint16_t pos = 0; pos<len; pos++){
+			//get the byte
 			uint8_t byte = buf[pos];
 
 			//add to buffer 
-			if(recv_pos < NVILIDAR_PACK_BYTES_SUM){
+			if(recv_pos < sizeof(VP100_Node_Package_Union)){
 				pack_buf_union.buf[recv_pos] = byte;
 			}else {
 				recv_pos = 0;
 			}
 
-			switch (recv_pos)
-			{
-				case 0:     		//first byte 
-				{
-					if (byte == (uint8_t)(NVILIDAR_POINT_HEADER & 0xFF)){
-						recv_pos++;    
+			switch (recv_pos){
+				case 0: {    		//first byte 
+					if (byte == (uint8_t)(NVILIDAR_POINT_HEADER & 0xFF)){	
+						recv_pos++;   
 					}
-					else {        	//check failed 
-						
+					else {        	//check failed 		
+						recv_pos = 0;
 						break;
 					}
 					break;
 				}
-				case 1:     		//second byte 
-				{
+				case 1: {    		//second byte 
 					if (byte == (uint8_t)(NVILIDAR_POINT_HEADER >> 8)){
-						recv_pos++;      
+						recv_pos++;  
+					}
+					else if(byte == (uint8_t)(NVILIDAR_POINT_HEADER & 0xFF)){
+						recv_pos = 1;
 					}
 					else{
-						pack_info.packageErrFlag = true;  
 						recv_pos = 0;
 					}
 					break;
 				}
-				case 2:     		//information 
-				{
-					switch(byte){
-						case 0x03:{		//3byte with quality 
-							pack_info.packageHasQuality = true;		//has quality 
-							recv_pos++;   
-							break;
-						}
-						case 0x02:{		//2byte no quality 
-							pack_info.packageHasQuality = false;		//no quality 
-							recv_pos++; 
-							break;  
-						}
-						default:{
+				case 2: {    		//information 
+					if((0x55 == pack_buf_union.buf[0]) && (0xAA == pack_buf_union.buf[1])) {   //0x55 0xAA ===> package head 
+						if( (((PROTOCOL_VP100_NORMAL_NO_QUALITY >> 8)& 0xFF) == byte) ||
+							(((PROTOCOL_VP100_NORMAL_QUALITY >> 8)& 0xFF) == byte) ||
+							(((PROTOCOL_VP100_YW_QUALITY >> 8)& 0xFF) == byte) ||
+							(((PROTOCOL_VP100_FS_TEST_MODEL_QUAILIY >> 8)& 0xFF) == byte)) {
+								lidar_model_code = (int)(byte << 8);		//high 8 bit 
+								recv_pos++;
+							}
+                    }else{
+                        recv_pos = 0;
+                    }
+					break;
+				}
+				case 3: { 			//data number 
+					if((0x55 == pack_buf_union.buf[0]) && (0xAA == pack_buf_union.buf[1])){
+						if( ((PROTOCOL_VP100_NORMAL_NO_QUALITY & 0xFF) == byte) ||
+							((PROTOCOL_VP100_NORMAL_QUALITY & 0xFF) == byte) ||
+							((PROTOCOL_VP100_YW_QUALITY & 0xFF) == byte) ||
+							((PROTOCOL_VP100_FS_TEST_MODEL_QUAILIY & 0xFF) == byte)  ){
+								lidar_model_code |= byte;
+								//取到当前包字节总长
+								pack_size = GET_LIDAR_DATA_SIZE(lidar_model_code);
+								recv_pos++;
+						}else{
+							pack_size = 0;
 							recv_pos = 0;
-							break;
 						}
 					}
 					break;
-				}
-				case 3:   			//data number 
-				{
-					if(NVILIDAR_PACK_MAX_POINTS == byte){	//this index must be 8
-						recv_pos++;
-					}else{
-						pack_info.packageErrFlag = true;  
-						recv_pos = 0;
-					}
-					break;
-				}
-				case 4:     		//speed_l
-				{
-					pack_info.packageSpeed = byte;
-                	recv_pos++;
-					break;
-				}
-				case 5:    	 		//speed_h
-				{
-					pack_info.packageSpeed += (byte * 256);
-                	recv_pos++;
-					break;
-				}
+                }	
 				default:{
-					//judge the lidar has quality?
-
-					//has quality 
-					if(pack_info.packageHasQuality){
-						if((recv_pos > 5) && (recv_pos < sizeof(Nvilidar_Node_Package_Quality) - 1)){	//buffer 
-							recv_pos++;
+					//if can not get the right size,return 
+					if(0 == pack_size){
+						recv_pos = 0;
+						break;
+                	}
+					//get the value 
+					if(pack_size - 1 == recv_pos){
+						if((0x55 == pack_buf_union.buf[0]) && (0xAA == pack_buf_union.buf[1])) {  //0x55 0xAA
+							switch(lidar_model_code){
+								case PROTOCOL_VP100_NORMAL_NO_QUALITY:{
+									PointCloudAnalysis_Normal_NoQuality(&pack_buf_union);
+									break;
+								}
+								case PROTOCOL_VP100_NORMAL_QUALITY:{
+								    PointCloudAnalysis_Normal_Quality(&pack_buf_union);
+									break;
+								}
+								case PROTOCOL_VP100_YW_QUALITY:{
+									PointCloudAnalysis_YW_Quality(&pack_buf_union);
+									break;
+								}
+								case PROTOCOL_VP100_FS_TEST_MODEL_QUAILIY:{
+								    PointCloudAnalysis_FS_Test_Quality(&pack_buf_union);
+									break;
+								}
+								default:{
+									break;
+								}
+							}
 						}
-						else if((sizeof(Nvilidar_Node_Package_Quality) - 1) == recv_pos){				//last byte 
-							//=====crc compare 
-							uint16_t crc_get = pack_buf_union.quality.package_checkSum;
-							uint16_t crc_calc = LidarCheckCRC(pack_buf_union.buf,sizeof(Nvilidar_Node_Package_Quality)-2);
-
-							if(crc_calc != crc_get){
-								recv_pos = 0;
-								memset(pack_buf_union.buf,0x00,sizeof(Nvilidar_Node_Package_Quality));
-								return;
-							}
-
-							//=====calculate angle & distance 
-							//angle apart 
-							double angle_differ = 0.0;
-							uint16_t first_angle = pack_buf_union.quality.package_firstSampleAngle - 0xA000;
-							uint16_t last_angle =  pack_buf_union.quality.package_lastSampleAngle - 0xA000;
-
-							if(last_angle >= first_angle){      //start angle > end angle 
-								angle_differ = ((double)(last_angle - first_angle)/(NVILIDAR_PACK_MAX_POINTS - 1))/64.0;
-							}else {
-								angle_differ = ((double)(last_angle + (360*64) - first_angle)/(NVILIDAR_PACK_MAX_POINTS - 1))/64.0;
-							}
-							double first_angle_true = (double)(first_angle)/64.0;
-
-							//clear to zero 
-							pack_info.package0CIndex = 0;
-							pack_info.packageHas0CAngle = false;
-
-							//distance 
-							for(int j = 0; j<NVILIDAR_PACK_MAX_POINTS; j++){
-								//get angle 
-								double cur_angle = first_angle_true + angle_differ*j;
-								if(cur_angle >= 360.0){
-									cur_angle -= 360.0;
-								}
-								//get distance  
-								uint16_t cur_distance_u16 = pack_buf_union.quality.package_Sample[j].PakageSampleDistance;
-								double cur_distance = 0;
-								if((cur_distance_u16 & 0x8000) != 0){
-									cur_distance = 0;
-								}else {
-									cur_distance = (double)(cur_distance_u16);
-								}
-								//get quality 
-								uint8_t cur_quality = (uint8_t)(pack_buf_union.quality.package_Sample[j].PakageSampleQuality);
-								//speed 
-								pack_info.packageSpeed = (double)(pack_buf_union.quality.package_speed) / 64.0;
-
-								//angle and distance combine  
-								pack_info.packagePoints[j].distance = cur_distance;
-								pack_info.packagePoints[j].angle = cur_angle;
-								pack_info.packagePoints[j].quality = cur_quality;
-								//judge it is angle 0
-								if(cur_angle < pack_last_angle_has_qua){
-									pack_info.packageHas0CAngle = true;
-									pack_info.package0CIndex = j;
-								}
-								pack_last_angle_has_qua = cur_angle;
-							}
-
-							//get timestamp 
-							if (pack_info.packageHas0CAngle){
-								if(get_timestamp != nullptr){
-									pack_info.packageStopStamp = get_timestamp();
-								}else{
-									pack_info.packageStopStamp = 0;
-								}
-							}
-							//points analysis 
-							PointDataAnalysis(pack_info);
-
-							//clear all data   
-							memset((uint8_t *)(&pack_info), 0x00, sizeof(Nvilidar_PointViewerPackageInfoTypeDef));
-							recv_pos = 0;               //receive position to 0  
-						}
-						else {			//out of buffer 
-							recv_pos = 0;       		//clear 
-						}
-					}
-					//no quality 
-					else{
-						if((recv_pos > 5) && (recv_pos < sizeof(Nvilidar_Node_Package_No_Quality) - 1)){	//buffer 
-							recv_pos++;
-						}
-						else if((sizeof(Nvilidar_Node_Package_No_Quality) - 1) == recv_pos){		//last byte 
-							//=====crc compare 
-							uint16_t crc_get = pack_buf_union.no_quality.package_checkSum;
-							uint16_t crc_calc = LidarCheckCRC(pack_buf_union.buf,sizeof(Nvilidar_Node_Package_No_Quality)-2);
-
-							if(crc_calc != crc_get){
-								recv_pos = 0;
-								memset(pack_buf_union.buf,0x00,sizeof(Nvilidar_Node_Package_No_Quality));
-								return;
-							}
-
-							//=====calculate angle & distance 
-							//angle apart 
-							double angle_differ = 0.0;
-							uint16_t first_angle = pack_buf_union.no_quality.package_firstSampleAngle - 0xA000;
-							uint16_t last_angle =  pack_buf_union.no_quality.package_lastSampleAngle - 0xA000;
-
-							if(last_angle >= first_angle){      //start angle > end angle 
-								angle_differ = ((double)(last_angle - first_angle)/(NVILIDAR_PACK_MAX_POINTS - 1))/64.0;
-							}else {
-								angle_differ = ((double)(last_angle + (360*64) - first_angle)/(NVILIDAR_PACK_MAX_POINTS - 1))/64.0;
-							}
-							double first_angle_true = (double)(first_angle)/64.0;
-
-							//clear to zero 
-							pack_info.package0CIndex = 0;
-							pack_info.packageHas0CAngle = false;
-
-							//distance 
-							for(int j = 0; j<NVILIDAR_PACK_MAX_POINTS; j++){
-								//get angle 
-								double cur_angle = first_angle_true + angle_differ*j;
-								if(cur_angle >= 360.0){
-									cur_angle -= 360.0;
-								}
-								//get distance  
-								uint16_t cur_distance_u16 = pack_buf_union.no_quality.package_Sample[j].PakageSampleDistance;
-								double cur_distance = 0;
-								if((cur_distance_u16 & 0x8000) != 0){
-									cur_distance = 0;
-								}else {
-									cur_distance = (double)(cur_distance_u16);
-								}
-								//speed 
-								pack_info.packageSpeed = (double)(pack_buf_union.no_quality.package_speed) / 64.0;
-
-								//angle and distance combine  
-								pack_info.packagePoints[j].distance = cur_distance;
-								pack_info.packagePoints[j].angle = cur_angle;
-								pack_info.packagePoints[j].quality = 0;		//do not has quality 
-								//judge it is angle 0
-								if(cur_angle < pack_last_angle_no_qua){
-									pack_info.packageHas0CAngle = true;
-								 	pack_info.package0CIndex = j;
-								}
-								pack_last_angle_no_qua = cur_angle;
-							}
-
-							//get timestamp 
-							if (pack_info.packageHas0CAngle){
-								if(get_timestamp != nullptr){
-									pack_info.packageStopStamp = get_timestamp();
-								}else{
-									pack_info.packageStopStamp = 0;
-								}
-							}
-							//points analysis 
-							PointDataAnalysis(pack_info);
-
-							//clear all data   
-							memset((uint8_t *)(&pack_info), 0x00, sizeof(Nvilidar_PointViewerPackageInfoTypeDef));
-							recv_pos = 0;               //receive position to 0  
-						}
-						else {			//out of buffer 
-							recv_pos = 0;       		//clear 
-						}
+						//clear the buffer 
+						memset(pack_buf_union.buf,0x00,sizeof(VP100_Node_Package_Union));
+						recv_pos = 0;
+						break;
+					}else{
+						recv_pos++;
 					}
 					break;
 				}
@@ -493,75 +347,374 @@ namespace vp100_lidar
 		}
 	}
 
-	//unpack  
-	void LidarDriverSerialport::PointDataAnalysis(Nvilidar_PointViewerPackageInfoTypeDef pack_point)
-	{
-		//get point list  
-		static std::vector<Nvilidar_Node_Info> point_list;
-		static int curr_circle_count = 0;		//test variable 
-		static int curr_pack_count = 0;			//test variable 
+	//normal no quality 
+	void LidarDriverSerialport::PointCloudAnalysis_Normal_NoQuality(VP100_Node_Package_Union *pack){
+		uint64_t packageStamp = 0;			//the time stamp 
+		//=====crc compare 
+		uint16_t crc_get = pack_buf_union.vp100_normal_no_quality.package_checkSum;
+		uint16_t crc_calc = LidarCheckCRC(pack_buf_union.buf,sizeof(VP100_Normal_Node_Package_No_Quality)-2);
+		if(crc_calc != crc_get) {
+			return;
+		}
 
-		//calc data  
-		for (int i = 0; i < NVILIDAR_PACK_MAX_POINTS; i++){
+		//=====calculate angle & distance 
+		//angle apart 
+		double angle_differ = 0.0;
+
+		uint16_t first_angle = pack_buf_union.vp100_normal_no_quality.package_firstSampleAngle - 0xA000;
+		uint16_t last_angle =  pack_buf_union.vp100_normal_no_quality.package_lastSampleAngle - 0xA000;
+		if(last_angle >= first_angle){      //start angle > end angle 
+			angle_differ = ((double)(last_angle - first_angle)/(NORMAL_NO_QUALITY_PACK_MAX_POINTS - 1))/64.0;
+		}else {
+			angle_differ = ((double)(last_angle + (360*64) - first_angle)/(NORMAL_NO_QUALITY_PACK_MAX_POINTS - 1))/64.0;
+		}
+		double first_angle_true = (double)(first_angle)/64.0;
+
+		//distance apart 
+    	for(int j = 0; j<NORMAL_NO_QUALITY_PACK_MAX_POINTS; j++) {
+			//the node info 
 			Nvilidar_Node_Info node;
-
-			node.lidar_distance = 	pack_point.packagePoints[i].distance;    //distance
-			node.lidar_angle =  	pack_point.packagePoints[i].angle;
-			node.lidar_quality = 	pack_point.packagePoints[i].quality;
-			node.lidar_speed = 		pack_point.packageSpeed;  				//speed 
-			node.lidar_index = 		i;                 						//index 
-
-			//has 0 angle 
-			if (pack_point.packageHas0CAngle){
-				if (i == pack_point.package0CIndex){
-					node.lidar_angle_zero_flag = true;
-					curr_pack_count = 0;
-				}
-				else{
-					node.lidar_angle_zero_flag = false;
-					curr_pack_count++;
-				}
+			//get the angle 
+			double cur_angle = first_angle_true + angle_differ*j;
+			if(cur_angle >= 360.0){
+				cur_angle -= 360.0;
 			}
-			else{
-				node.lidar_angle_zero_flag = false;
-				curr_pack_count++; 
-			}	
+			//get distance  
+			uint16_t cur_distance_u16 = pack->vp100_normal_no_quality.package_Sample[j].PakageSampleDistance;
+			double cur_distance = 0;
+			if((cur_distance_u16 & 0x8000) != 0){
+				cur_distance = 0;
+			}else {
+				cur_distance = (double)(cur_distance_u16);
+			}
+			//get quality 
+			uint16_t cur_quality = 0;
+			//speed 
+			double cur_speed = (double)(pack_buf_union.vp100_normal_no_quality.package_speed) / 64.0;
 
+			//find circle start 
+			if(cur_angle < last_angle_point){
+				packageStamp = getStamp();
+				node.lidar_angle_zero_flag = true;
+				curr_pack_count = 0;
+
+			}else{
+				node.lidar_angle_zero_flag = false;
+				curr_pack_count++;
+			}
+			last_angle_point = cur_angle;
+
+			//points analysis 
+			node.lidar_distance = 	cur_distance;   //distance
+			node.lidar_angle =  	cur_angle;		//angle 
+			node.lidar_quality = 	cur_quality;	//cur quality 
+			node.lidar_speed = 		cur_speed;  	//speed 
+			node.lidar_index = 		j;              //index	
 			//add to vector  
 			if(node.lidar_angle_zero_flag){
-				curr_circle_count = point_list.size();		//add to vector  
+				curr_circle_count = node_point_list.size();		//add to vector  
 			}
-			point_list.push_back(node);
-		}
+			node_point_list.push_back(node);	
 
-		//if has angle  
-		if(pack_point.packageHas0CAngle){
-			uint32_t  all_pack_time;
-			uint32_t  all_count = 0;
-			uint32_t  circle_count = 0;
-			uint64_t  stamp_temp = 0;
-			uint64_t  stamp_differ = 0;
+			//data process 
+			if(node.lidar_angle_zero_flag){
+				uint32_t  all_pack_time;
+				uint32_t  all_count = 0;
+				uint32_t  circle_count = 0;
 
-			m_run_circles++;		//points  
+				circleDataInfo.lidarCircleNodePoints = node_point_list;	//get time stamp 
+				all_count = node_point_list.size();
+				circle_count = curr_circle_count;
 
-			circleDataInfo.lidarCircleNodePoints = point_list;	//get time stamp 
-			all_count = point_list.size();
-			circle_count = curr_circle_count;
+				circleDataInfo.lidarCircleNodePoints.assign(node_point_list.begin(),node_point_list.begin() + curr_circle_count);		//get pre data 	
+				node_point_list.erase(node_point_list.begin(),node_point_list.begin() + curr_circle_count);								//after data 
+				curr_circle_count = 0;
 
-			circleDataInfo.lidarCircleNodePoints.assign(point_list.begin(),point_list.begin() + curr_circle_count);		//get pre data 	
-			point_list.erase(point_list.begin(),point_list.begin() + curr_circle_count);								//after data 
-			curr_circle_count = 0;
-
-			//get time stamp 
-			circleDataInfo.startStamp = circleDataInfo.stopStamp;
-			circleDataInfo.stopStamp = pack_point.packageStopStamp;
-			//按比例重算结束时间 因为一包固定128点 0位可能出在任意位置  会影响时间戳精确度 
-			//printf("pack_num:%d,indx:%d\r\n", circleDataInfo.lidarCircleNodePoints.size(), pack_point.package0CIndex);
-
-			if (m_run_circles > 2){
+				//get time stamp 
+				circleDataInfo.startStamp = circleDataInfo.stopStamp;
+				circleDataInfo.stopStamp = packageStamp;
+				//按比例重算结束时间 因为一包固定128点 0位可能出在任意位置  会影响时间戳精确度 
+				//printf("pack_num:%d,indx:%d\r\n", circleDataInfo.lidarCircleNodePoints.size(), pack_point.package0CIndex);
 				setCircleResponseUnlock();		//thread unlock 
 			}
+    	}
+	}
+
+	//normal has quality 
+	void LidarDriverSerialport::PointCloudAnalysis_Normal_Quality(VP100_Node_Package_Union *pack){
+		uint64_t packageStamp = 0;			//the time stamp 
+		//=====crc compare 
+		uint16_t crc_get = pack_buf_union.vp100_normal_quality.package_checkSum;
+		uint16_t crc_calc = LidarCheckCRC(pack_buf_union.buf,sizeof(VP100_Normal_Node_Package_Quality)-2);
+		if(crc_calc != crc_get) {
+			return;
 		}
+
+		//=====calculate angle & distance 
+		//angle apart 
+		double angle_differ = 0.0;
+
+		uint16_t first_angle = pack_buf_union.vp100_normal_quality.package_firstSampleAngle - 0xA000;
+		uint16_t last_angle =  pack_buf_union.vp100_normal_quality.package_lastSampleAngle - 0xA000;
+		if(last_angle >= first_angle){      //start angle > end angle 
+			angle_differ = ((double)(last_angle - first_angle)/(NORMAL_HAS_QUALITY_PACK_MAX_POINTS - 1))/64.0;
+		}else {
+			angle_differ = ((double)(last_angle + (360*64) - first_angle)/(NORMAL_HAS_QUALITY_PACK_MAX_POINTS - 1))/64.0;
+		}
+		double first_angle_true = (double)(first_angle)/64.0;
+
+		//distance apart 
+    	for(int j = 0; j<NORMAL_HAS_QUALITY_PACK_MAX_POINTS; j++) {
+			//the node info 
+			Nvilidar_Node_Info node;
+			//get the angle 
+			double cur_angle = first_angle_true + angle_differ*j;
+			if(cur_angle >= 360.0){
+				cur_angle -= 360.0;
+			}
+			//get distance  
+			uint16_t cur_distance_u16 = pack->vp100_normal_quality.package_Sample[j].PakageSampleDistance;
+			double cur_distance = 0;
+			if((cur_distance_u16 & 0x8000) != 0){
+				cur_distance = 0;
+			}else {
+				cur_distance = (double)(cur_distance_u16);
+			}
+			//get quality 
+			uint16_t cur_quality = pack_buf_union.vp100_normal_quality.package_Sample[j].PakageSampleQuality;
+			//speed 
+			double cur_speed = (double)(pack_buf_union.vp100_normal_quality.package_speed) / 64.0;
+
+			//find circle start 
+			if(cur_angle < last_angle_point){
+				packageStamp = getStamp();
+				node.lidar_angle_zero_flag = true;
+				curr_pack_count = 0;
+
+			}else{
+				node.lidar_angle_zero_flag = false;
+				curr_pack_count++;
+			}
+			last_angle_point = cur_angle;
+
+			//points analysis 
+			node.lidar_distance = 	cur_distance;   //distance
+			node.lidar_angle =  	cur_angle;		//angle 
+			node.lidar_quality = 	cur_quality;	//cur quality 
+			node.lidar_speed = 		cur_speed;  	//speed 
+			node.lidar_index = 		j;              //index	
+			//add to vector  
+			if(node.lidar_angle_zero_flag){
+				curr_circle_count = node_point_list.size();		//add to vector  
+			}
+			node_point_list.push_back(node);	
+
+			//data process 
+			if(node.lidar_angle_zero_flag){
+				uint32_t  all_pack_time;
+				uint32_t  all_count = 0;
+				uint32_t  circle_count = 0;
+
+				circleDataInfo.lidarCircleNodePoints = node_point_list;	//get time stamp 
+				all_count = node_point_list.size();
+				circle_count = curr_circle_count;
+
+				circleDataInfo.lidarCircleNodePoints.assign(node_point_list.begin(),node_point_list.begin() + curr_circle_count);		//get pre data 	
+				node_point_list.erase(node_point_list.begin(),node_point_list.begin() + curr_circle_count);								//after data 
+				curr_circle_count = 0;
+
+				//get time stamp 
+				circleDataInfo.startStamp = circleDataInfo.stopStamp;
+				circleDataInfo.stopStamp = packageStamp;
+				//按比例重算结束时间 因为一包固定128点 0位可能出在任意位置  会影响时间戳精确度 
+				//printf("pack_num:%d,indx:%d\r\n", circleDataInfo.lidarCircleNodePoints.size(), pack_point.package0CIndex);
+				setCircleResponseUnlock();		//thread unlock 
+			}
+    	}
+	}
+
+	//yw has quality 
+	void LidarDriverSerialport::PointCloudAnalysis_YW_Quality(VP100_Node_Package_Union *pack){
+		uint64_t packageStamp = 0;			//the time stamp 
+		//=====crc compare 
+		uint16_t crc_get = pack_buf_union.vp100_yw_quality.package_checkSum;
+		uint16_t crc_calc = LidarCheckCRC(pack_buf_union.buf,sizeof(VP100_YW_Node_Package_Quality)-2);
+		if(crc_calc != crc_get) {
+			return;
+		}
+
+		//=====calculate angle & distance 
+		//angle apart 
+		double angle_differ = 0.0;
+
+		uint16_t first_angle = pack_buf_union.vp100_yw_quality.package_firstSampleAngle - 0xA000;
+		uint16_t last_angle =  pack_buf_union.vp100_yw_quality.package_lastSampleAngle - 0xA000;
+		if(last_angle >= first_angle){      //start angle > end angle 
+			angle_differ = ((double)(last_angle - first_angle)/(YW_HAS_QUALITY_PACK_MAX_POINTS - 1))/64.0;
+		}else {
+			angle_differ = ((double)(last_angle + (360*64) - first_angle)/(YW_HAS_QUALITY_PACK_MAX_POINTS - 1))/64.0;
+		}
+		double first_angle_true = (double)(first_angle)/64.0;
+
+		//distance apart 
+    	for(int j = 0; j<YW_HAS_QUALITY_PACK_MAX_POINTS; j++) {
+			//the node info 
+			Nvilidar_Node_Info node;
+			//get the angle 
+			double cur_angle = first_angle_true + angle_differ*j;
+			if(cur_angle >= 360.0){
+				cur_angle -= 360.0;
+			}
+			//get distance  
+			uint16_t cur_distance_u16 = pack->vp100_yw_quality.package_Sample[j].PakageSampleDistance;
+			double cur_distance = 0;
+			if((cur_distance_u16 & 0x8000) != 0){
+				cur_distance = 0;
+			}else {
+				cur_distance = (double)(cur_distance_u16);
+			}
+			//get quality 
+			uint16_t cur_quality = pack->vp100_yw_quality.package_Sample[j].PakageSampleQuality / 48;
+			//speed 
+			double cur_speed = (double)(pack_buf_union.vp100_yw_quality.package_speed) / 64.0;
+
+			//find circle start 
+			if(cur_angle < last_angle_point){
+				packageStamp = getStamp();
+				node.lidar_angle_zero_flag = true;
+				curr_pack_count = 0;
+
+			}else{
+				node.lidar_angle_zero_flag = false;
+				curr_pack_count++;
+			}
+			last_angle_point = cur_angle;
+
+			//points analysis 
+			node.lidar_distance = 	cur_distance;   //distance
+			node.lidar_angle =  	cur_angle;		//angle 
+			node.lidar_quality = 	cur_quality;	//cur quality 
+			node.lidar_speed = 		cur_speed;  	//speed 
+			node.lidar_index = 		j;              //index	
+			//add to vector  
+			if(node.lidar_angle_zero_flag){
+				curr_circle_count = node_point_list.size();		//add to vector  
+			}
+			node_point_list.push_back(node);	
+
+			//data process 
+			if(node.lidar_angle_zero_flag){
+				uint32_t  all_pack_time;
+				uint32_t  all_count = 0;
+				uint32_t  circle_count = 0;
+
+				circleDataInfo.lidarCircleNodePoints = node_point_list;	//get time stamp 
+				all_count = node_point_list.size();
+				circle_count = curr_circle_count;
+
+				circleDataInfo.lidarCircleNodePoints.assign(node_point_list.begin(),node_point_list.begin() + curr_circle_count);		//get pre data 	
+				node_point_list.erase(node_point_list.begin(),node_point_list.begin() + curr_circle_count);								//after data 
+				curr_circle_count = 0;
+
+				//get time stamp 
+				circleDataInfo.startStamp = circleDataInfo.stopStamp;
+				circleDataInfo.stopStamp = packageStamp;
+
+				setCircleResponseUnlock();		//thread unlock 
+			}
+    	}
+	}
+
+	//FS has quality 
+	void LidarDriverSerialport::PointCloudAnalysis_FS_Test_Quality(VP100_Node_Package_Union *pack){
+		uint64_t packageStamp = 0;			//the time stamp 
+		//=====crc compare 
+		uint16_t crc_get = pack_buf_union.vp100_fs_test_quality.package_checkSum;
+		uint16_t crc_calc = LidarCheckCRC(pack_buf_union.buf,sizeof(VP100_FS_Test_Node_Package_Quality)-2);
+		if(crc_calc != crc_get) {
+			return;
+		}
+
+		//=====calculate angle & distance 
+		//angle apart 
+		double angle_differ = 0.0;
+
+		uint16_t first_angle = pack_buf_union.vp100_fs_test_quality.package_firstSampleAngle - 0xA000;
+		uint16_t last_angle =  pack_buf_union.vp100_fs_test_quality.package_lastSampleAngle - 0xA000;
+		if(last_angle >= first_angle){      //start angle > end angle 
+			angle_differ = ((double)(last_angle - first_angle)/(FS_HAS_QUALITY_PACK_MAX_POINTS - 1))/64.0;
+		}else {
+			angle_differ = ((double)(last_angle + (360*64) - first_angle)/(FS_HAS_QUALITY_PACK_MAX_POINTS - 1))/64.0;
+		}
+		double first_angle_true = (double)(first_angle)/64.0;
+
+		//distance apart 
+    	for(int j = 0; j<FS_HAS_QUALITY_PACK_MAX_POINTS; j++) {
+			//the node info 
+			Nvilidar_Node_Info node;
+			//get the angle 
+			double cur_angle = first_angle_true + angle_differ*j;
+			if(cur_angle >= 360.0){
+				cur_angle -= 360.0;
+			}
+			//get distance  
+			uint16_t cur_distance_u16 = pack->vp100_fs_test_quality.package_Sample[j].PakageSampleDistance;
+			double cur_distance = 0;
+			if((cur_distance_u16 & 0x8000) != 0){
+				cur_distance = 0;
+			}else {
+				cur_distance = (double)(cur_distance_u16);
+			}
+			//get quality 
+			uint16_t cur_quality = pack->vp100_fs_test_quality.package_Sample[j].PakageSampleQuality;
+			//speed 
+			double cur_speed = (double)(pack_buf_union.vp100_fs_test_quality.package_speed) / 64.0;
+
+			//find circle start 
+			if(cur_angle < last_angle_point){
+				packageStamp = getStamp();
+				node.lidar_angle_zero_flag = true;
+				curr_pack_count = 0;
+
+			}else{
+				node.lidar_angle_zero_flag = false;
+				curr_pack_count++;
+			}
+			last_angle_point = cur_angle;
+
+			//points analysis 
+			node.lidar_distance = 	cur_distance;   //distance
+			node.lidar_angle =  	cur_angle;		//angle 
+			node.lidar_quality = 	cur_quality;	//cur quality 
+			node.lidar_speed = 		cur_speed;  	//speed 
+			node.lidar_index = 		j;              //index	
+			//add to vector  
+			if(node.lidar_angle_zero_flag){
+				curr_circle_count = node_point_list.size();		//add to vector  
+			}
+			node_point_list.push_back(node);	
+
+			//data process 
+			if(node.lidar_angle_zero_flag){
+				uint32_t  all_pack_time;
+				uint32_t  all_count = 0;
+				uint32_t  circle_count = 0;
+
+				circleDataInfo.lidarCircleNodePoints = node_point_list;	//get time stamp 
+				all_count = node_point_list.size();
+				circle_count = curr_circle_count;
+
+				circleDataInfo.lidarCircleNodePoints.assign(node_point_list.begin(),node_point_list.begin() + curr_circle_count);		//get pre data 	
+				node_point_list.erase(node_point_list.begin(),node_point_list.begin() + curr_circle_count);								//after data 
+				curr_circle_count = 0;
+
+				//get time stamp 
+				circleDataInfo.startStamp = circleDataInfo.stopStamp;
+				circleDataInfo.stopStamp = packageStamp;
+
+				setCircleResponseUnlock();		//thread unlock 
+			}
+    	}
 	}
 
 
@@ -845,7 +998,7 @@ namespace vp100_lidar
 	void LidarDriverSerialport::LidarSamplingData(CircleDataInfoTypeDef info, LidarScan &outscan){
 		uint32_t all_nodes_counts = 0;		//所有点数  不做截取等用法 
 		uint64_t scan_time = 0;				//2圈点的扫描间隔  
-		uint64_t point_stamp = 0;			//point stamp 
+		uint64_t point_stamp = 0;			//point gap time 
 
 		//扫描时间 
 		scan_time = info.stopStamp - info.startStamp;
@@ -856,7 +1009,7 @@ namespace vp100_lidar
 		//固定角分辨率 
 		if (lidar_cfg.resolution_fixed)
 		{
-			//all_nodes_counts = (uint32_t)(lidar_cfg.storePara.samplingRate * 100 / lidar_cfg.storePara.aimSpeed);
+			all_nodes_counts = (uint32_t)(lidar_cfg.sampling_rate * 1000 / lidar_cfg.aim_speed);
 		}
 		else 	//非固定角分辨率 则是雷达默认一包多少点 就实际产生多少个点 
 		{

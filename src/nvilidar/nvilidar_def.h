@@ -9,7 +9,7 @@
 //======================================basic parameter============================================ 
 
 //SDK version 
-#define NVILIDAR_SDKVerision     "1.0.0"
+#define NVILIDAR_SDKVerision     "1.0.2"
 
 //PI def
 #ifndef M_PI
@@ -21,9 +21,6 @@
 #define NVILIDAR_POINT_TIMEOUT		 	2000	 //one circle time  for example, the lidar speed is 10hz ,the timeout must smaller the 100ms
  
 #define NVILIDAR_COMMUNICATE_TWO_WAY	0
-
-#define NVILIDAR_SINGLE_PACK_POINTS		8		//one pack has N points 
-
 
 //lidar model  list 
 typedef enum
@@ -70,35 +67,13 @@ typedef struct
 	bool 		resolution_fixed;		//is good resolution  
 }Nvilidar_UserConfigTypeDef;
 
-//union 
-typedef union 
-{
-	uint8_t buf[256];
-	Nvilidar_Node_Package_Quality        pack_qua;
-	Nvilidar_Node_Package_No_Quality     pack_no_qua;
-}Nvilidar_PackageBufTypeDef;
-
 //lidar point 
 typedef struct{
 	uint16_t   distance;
 	double     angle;
-	uint8_t    quality;	
+	uint16_t   quality;	
 	double     speed;	
 }Nvilidar_PackagePoint;
-
-//package info 
-typedef struct 
-{
-	bool     packageHasQuality;		//is has quality,it is defined by protocol 
-	Nvilidar_PackagePoint  packagePoints[NVILIDAR_SINGLE_PACK_POINTS];    //points info 
-	bool     packageErrFlag;       //error flag 
-	uint16_t packageCheckSumGet;   //crc get from protocol 
-	uint16_t packageCheckSumCalc;  //crc calculate 
-	uint16_t packageSpeed;         //lidar speed 
-	bool     packageHas0CAngle;    //is 0 
-	uint16_t package0CIndex;   		//is 0 index 
-	uint64_t packageStopStamp;		//time stamp stop  
-}Nvilidar_PointViewerPackageInfoTypeDef;
 
 //circle data  
 typedef struct

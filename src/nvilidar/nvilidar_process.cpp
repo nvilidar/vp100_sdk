@@ -170,7 +170,7 @@ namespace vp100_lidar
 		//lidar model 
 		cfg.lidar_model_name = NVILIDAR_VP100;
 		//para to config 
-		cfg.serialport_baud = 921600;
+		cfg.serialport_baud = 115200;
 		cfg.serialport_name = "/dev/nvilidar";
 		cfg.frame_id = "laser_frame";
 		cfg.resolution_fixed = false;		//one circle same points  
@@ -181,8 +181,8 @@ namespace vp100_lidar
 		cfg.angle_min = -180.0;
 		cfg.range_max = 64.0;
 		cfg.range_min = 0;
-		cfg.aim_speed = 10.0;				//10Hz
-		cfg.sampling_rate = 10;				//10k
+		cfg.aim_speed = 6.0;				//6Hz
+		cfg.sampling_rate = 3;				//3k
 		cfg.angle_offset_change_flag = false;	//change angle offset flag
 		cfg.angle_offset = 0.0;				//angle offset 
 		cfg.ignore_array_string = "";		//filter some angle 
