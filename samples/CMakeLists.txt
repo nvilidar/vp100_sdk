@@ -1,6 +1,6 @@
 project(vp100_test)
 cmake_minimum_required(VERSION 2.8)
-PROJECT(nvilidar_test)
+PROJECT(vp100_lidar_test)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 add_definitions(-std=c++11) # Use C++11
 
@@ -17,4 +17,4 @@ ADD_EXECUTABLE(${PROJECT_NAME}
                main.cpp)
 
 # Add the required libraries for linking:
-TARGET_LINK_LIBRARIES(${PROJECT_NAME} nvilidar_driver)
+TARGET_LINK_LIBRARIES(${PROJECT_NAME} vp100_lidar_driver)

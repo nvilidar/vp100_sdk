@@ -2,14 +2,21 @@
 #include "serial/nvilidar_serial.h"
 #include <list>
 #include <string>
-#include "myconsole.h"
-#include "mytimer.h"
-#include "mystring.h"
+#include "mystring.hpp"
+#include "myconsole.hpp"
+#include "mytimer.hpp"
+#include <iomanip>
 
 namespace vp100_lidar
 {
 	LidarDriverSerialport::LidarDriverSerialport(){
-		lidar_state.m_CommOpen = false;    
+		lidar_state.m_CommOpen = false;
+		//default value     
+		circleDataInfo.differStamp = 0;
+		circleDataInfo.error_code = VP100_ERROR_CODE_NORMAL;
+		circleDataInfo.lidarCircleNodePoints.clear();
+		circleDataInfo.startStamp = 0;
+		circleDataInfo.stopStamp = 0;	
 	}
 
 	LidarDriverSerialport::~LidarDriverSerialport(){
@@ -32,7 +39,8 @@ namespace vp100_lidar
 	}
 
 	//lidar init 
-	bool LidarDriverSerialport::LidarInitialialize(){						
+	bool LidarDriverSerialport::LidarInitialialize(){
+		VP100_Head_LidarInfo_TypeDef vp100_info;		
 		//para is valid?
 		if ((lidar_cfg.serialport_name.length() == 0) || (lidar_cfg.serialport_baud == 0)){
 			return false;		
@@ -40,16 +48,30 @@ namespace vp100_lidar
 
 		//start to connect serialport 
 		if (!LidarConnect(lidar_cfg.serialport_name, lidar_cfg.serialport_baud)){
-			vp100_lidar::console.error("NVILIDAR Connect Serialport failed!");
+			vp100_lidar::Console::error("VP100 Connect Serialport failed!");
 			return false;		//serialport connect fail 
 		}
 
 		//send stop cmd 
 		StopScan();
 		//sleep 
-		delayMS(300);
+		vp100_lidar::TimeStamp::sleepMS(100); 
 		//create thread to read serialport data   
-		createThread();	 
+		createThread();	
+		//sleep 
+		vp100_lidar::TimeStamp::sleepMS(300); 
+		//get the information 
+		if(false == LidarGetInfo(vp100_info)){
+			vp100_lidar::Console::error("Get VP100 Info Error!");
+			return false;
+		}
+		vp100_lidar::Console::show("\nVP100 Lidar Device Info:\n");
+		vp100_lidar::Console::show("Model        : %s", vp100_info.upBoard_Model.c_str());
+		vp100_lidar::Console::show("Soft Version : %s", vp100_info.upBoard_SoftVersion.c_str());
+		vp100_lidar::Console::show("Hard Version : %s", vp100_info.upBoard_HardVersion.c_str());
+		vp100_lidar::Console::show("ID           : %s", vp100_info.upBoard_ID.c_str());
+		vp100_lidar::Console::show("Date         : %s", vp100_info.upBoard_Date.c_str());
+		vp100_lidar::Console::show("\n");
 
 		return true;
 	}
@@ -57,7 +79,7 @@ namespace vp100_lidar
 	//lidar start  
 	bool LidarDriverSerialport::LidarTurnOn(){
 		//success 
-		vp100_lidar::console.message("[NVILIDAR INFO] Now NVILIDAR is scanning ......");
+		vp100_lidar::Console::message("Now NVILIDAR is scanning ......");
 
 		return true;
 	}
@@ -105,6 +127,29 @@ namespace vp100_lidar
 		return crc_value;
 	}
 
+	//check add sum 
+	uint8_t LidarDriverSerialport::checkAddSum(uint8_t *data, uint16_t len) {
+		uint8_t check_sum_value = 0;
+
+		if(len < 1){
+			return 0;
+		}
+		for (uint16_t i = 0; i < len - 1; i++) {
+			check_sum_value += data[i];
+		}
+		return check_sum_value;
+	}
+
+	//add hex byte to string 
+	std::string LidarDriverSerialport::hexBytesToString(const char* data, size_t length) {
+		std::stringstream ss;
+		ss << std::hex << std::uppercase << std::setfill('0');
+		for (size_t i = 0; i < length; ++i) {
+			ss << std::setw(2) << static_cast<unsigned>(static_cast<unsigned char>(data[i]));
+		}
+		return ss.str();
+	}
+
 	//lidar start 
 	bool LidarDriverSerialport::StartScan(){
 		//serialport state 
@@ -126,19 +171,45 @@ namespace vp100_lidar
 		return true;
 	}
 
+	//lidar reset 
+	bool  LidarDriverSerialport::LidarReset(){
+		//send the command
+		if(false == SendCommand(0x03)){
+        	return false;
+    	}
+		//delay for 300ms 
+		vp100_lidar::TimeStamp::sleepMS(300);
+		return true;
+	}
+
+	//lidar reset and get the lidar info 
+	bool  LidarDriverSerialport::LidarGetInfo(VP100_Head_LidarInfo_TypeDef &info,uint32_t timeout){
+		protocol_receive_flag = false;
+		//send the command
+		if(false == SendCommand(0x03)){
+        	return false;
+    	}
+		//wait for ack
+		if (waitNormalResponse(timeout)){
+			if (protocol_receive_flag){
+				info = vp100_lidar_info;
+				return true;
+			}
+		}
+		return false;
+	}
+
 	//lidar connect via serialport 
 	bool LidarDriverSerialport::LidarConnect(std::string portname, uint32_t baud){
 		serialport.serialInit(portname,baud);
 		serialport.serialOpen();
 		
-		if (serialport.isSerialOpen())
-		{
+		if (serialport.isSerialOpen()){
 			lidar_state.m_CommOpen = true;
 
 			return true;
 		}
-		else
-		{
+		else{
 			lidar_state.m_CommOpen = false;
 
 			return false;
@@ -167,8 +238,7 @@ namespace vp100_lidar
 		size_t r;
 		while (size){
 			r = serialport.serialWriteData(data,size);
-			if (r < 1) 
-			{
+			if (r < 1){
 				return false;
 			}
 
@@ -254,30 +324,57 @@ namespace vp100_lidar
 					if (byte == (uint8_t)(NVILIDAR_POINT_HEADER & 0xFF)){	
 						recv_pos++;   
 					}
-					else {        	//check failed 		
+					else if(0xA5 == byte){
+                        recv_pos++;
+                    }else {        	//check failed 		
 						recv_pos = 0;
 						break;
 					}
 					break;
 				}
 				case 1: {    		//second byte 
-					if (byte == (uint8_t)(NVILIDAR_POINT_HEADER >> 8)){
-						recv_pos++;  
-					}
-					else if(byte == (uint8_t)(NVILIDAR_POINT_HEADER & 0xFF)){
-						recv_pos = 1;
-					}
-					else{
+					if(0x55 == pack_buf_union.buf[0]){
+						//point cloud protocol 
+						if (byte == (uint8_t)(NVILIDAR_POINT_HEADER >> 8)){
+							recv_pos++;  
+						}else if( (0xAB == byte) || (0xAC == byte) || (0xAD == byte) || (0xAE == byte) || 
+								  (0xAF == byte) || (0xB0 == byte) || (0xB6 == byte) || (0xB7 == byte) ||
+							      (0xBA == byte)) {
+							recv_pos++;
+						}else{
+							recv_pos = 0;
+						}
+					}else if(0xA5 == pack_buf_union.buf[0]) {
+						if(0xAB == byte){
+							recv_pos++;
+						}else{
+							recv_pos = 0;
+						}
+					}else{
 						recv_pos = 0;
 					}
 					break;
 				}
 				case 2: {    		//information 
-					if((0x55 == pack_buf_union.buf[0]) && (0xAA == pack_buf_union.buf[1])) {   //0x55 0xAA ===> package head 
+					if((0x55 == pack_buf_union.buf[0]) && (0xAA != pack_buf_union.buf[1])){	   		//0x55 0xXX ===> downboard info 
+						if(0 != byte){
+							recv_pos++;
+							pack_size = byte + 4;  //package info（3byte head  + 1byte crc）
+						}else{
+							recv_pos = 0;
+						}
+					}else if((0xA5 == pack_buf_union.buf[0]) && (0xAB == pack_buf_union.buf[1])){	//0xA5 0xAB ===> upboard info 
+						if(0 != byte){
+							recv_pos++;
+						}else{
+							recv_pos = 0;
+						}
+					}else if((0x55 == pack_buf_union.buf[0]) && (0xAA == pack_buf_union.buf[1])) {   //0x55 0xAA ===> package head 
 						if( (((PROTOCOL_VP100_NORMAL_NO_QUALITY >> 8)& 0xFF) == byte) ||
 							(((PROTOCOL_VP100_NORMAL_QUALITY >> 8)& 0xFF) == byte) ||
 							(((PROTOCOL_VP100_YW_QUALITY >> 8)& 0xFF) == byte) ||
-							(((PROTOCOL_VP100_FS_TEST_MODEL_QUAILIY >> 8)& 0xFF) == byte)) {
+							(((PROTOCOL_VP100_FS_TEST_MODEL_QUAILIY >> 8)& 0xFF) == byte) || 
+							(((PROTOCOL_VP100_ERROR_FAULT >> 8)& 0xFF) == byte) ) {
 								lidar_model_code = (int)(byte << 8);		//high 8 bit 
 								recv_pos++;
 							}
@@ -287,11 +384,21 @@ namespace vp100_lidar
 					break;
 				}
 				case 3: { 			//data number 
-					if((0x55 == pack_buf_union.buf[0]) && (0xAA == pack_buf_union.buf[1])){
+					if((0x55 == pack_buf_union.buf[0]) && 0xAA != pack_buf_union.buf[1]){			//0x55 0xXX down info 
+						recv_pos++;
+					}else if((0xA5 == pack_buf_union.buf[0]) && 0xAB == pack_buf_union.buf[1]){
+						if(0 != byte){
+							recv_pos++;
+							pack_size = byte + 5;		//packagehead 4 bytes + 1 byte crc 
+						}else{
+							recv_pos = 0;
+						}
+					}else if((0x55 == pack_buf_union.buf[0]) && (0xAA == pack_buf_union.buf[1])){
 						if( ((PROTOCOL_VP100_NORMAL_NO_QUALITY & 0xFF) == byte) ||
 							((PROTOCOL_VP100_NORMAL_QUALITY & 0xFF) == byte) ||
 							((PROTOCOL_VP100_YW_QUALITY & 0xFF) == byte) ||
-							((PROTOCOL_VP100_FS_TEST_MODEL_QUAILIY & 0xFF) == byte)  ){
+							((PROTOCOL_VP100_FS_TEST_MODEL_QUAILIY & 0xFF) == byte) ||
+							((PROTOCOL_VP100_ERROR_FAULT & 0xFF) == byte) ){
 								lidar_model_code |= byte;
 								//取到当前包字节总长
 								pack_size = GET_LIDAR_DATA_SIZE(lidar_model_code);
@@ -311,7 +418,13 @@ namespace vp100_lidar
                 	}
 					//get the value 
 					if(pack_size - 1 == recv_pos){
-						if((0x55 == pack_buf_union.buf[0]) && (0xAA == pack_buf_union.buf[1])) {  //0x55 0xAA
+						if((0x55 == pack_buf_union.buf[0]) && (0xAA != pack_buf_union.buf[1])){			//0xA5 0xXX
+							LidarInfoAnalysis(&pack_buf_union);		//downboard info 
+						}
+						else if((0xA5 == pack_buf_union.buf[0]) && (0xAB == pack_buf_union.buf[1])){	//0xA5 0xAB
+							LidarInfoAnalysis(&pack_buf_union);		//upboard info 
+						}
+						else if((0x55 == pack_buf_union.buf[0]) && (0xAA == pack_buf_union.buf[1])) {  	//0x55 0xAA
 							switch(lidar_model_code){
 								case PROTOCOL_VP100_NORMAL_NO_QUALITY:{
 									PointCloudAnalysis_Normal_NoQuality(&pack_buf_union);
@@ -327,6 +440,10 @@ namespace vp100_lidar
 								}
 								case PROTOCOL_VP100_FS_TEST_MODEL_QUAILIY:{
 								    PointCloudAnalysis_FS_Test_Quality(&pack_buf_union);
+									break;
+								}
+								case PROTOCOL_VP100_ERROR_FAULT:{
+									PointCloudAnalysis_ErrorCode(&pack_buf_union);
 									break;
 								}
 								default:{
@@ -394,7 +511,9 @@ namespace vp100_lidar
 
 			//find circle start 
 			if(cur_angle < last_angle_point){
-				packageStamp = getStamp();
+				if(get_timestamp != nullptr){
+					packageStamp = get_timestamp();   //get current timestamp
+				}
 				node.lidar_angle_zero_flag = true;
 				curr_pack_count = 0;
 
@@ -418,13 +537,7 @@ namespace vp100_lidar
 
 			//data process 
 			if(node.lidar_angle_zero_flag){
-				uint32_t  all_pack_time;
-				uint32_t  all_count = 0;
-				uint32_t  circle_count = 0;
-
 				circleDataInfo.lidarCircleNodePoints = node_point_list;	//get time stamp 
-				all_count = node_point_list.size();
-				circle_count = curr_circle_count;
 
 				circleDataInfo.lidarCircleNodePoints.assign(node_point_list.begin(),node_point_list.begin() + curr_circle_count);		//get pre data 	
 				node_point_list.erase(node_point_list.begin(),node_point_list.begin() + curr_circle_count);								//after data 
@@ -433,9 +546,14 @@ namespace vp100_lidar
 				//get time stamp 
 				circleDataInfo.startStamp = circleDataInfo.stopStamp;
 				circleDataInfo.stopStamp = packageStamp;
-				//按比例重算结束时间 因为一包固定128点 0位可能出在任意位置  会影响时间戳精确度 
-				//printf("pack_num:%d,indx:%d\r\n", circleDataInfo.lidarCircleNodePoints.size(), pack_point.package0CIndex);
-				setCircleResponseUnlock();		//thread unlock 
+
+				circleDataInfo.error_code = VP100_ERROR_CODE_NORMAL;		//normal/no fault 
+
+				if(false == m_first_circle_finish){
+					m_first_circle_finish = true;
+				}else{
+					setCircleResponseUnlock();		//thread unlock 
+				}
 			}
     	}
 	}
@@ -487,7 +605,9 @@ namespace vp100_lidar
 
 			//find circle start 
 			if(cur_angle < last_angle_point){
-				packageStamp = getStamp();
+				if(get_timestamp != nullptr){
+					packageStamp =  get_timestamp();
+				}
 				node.lidar_angle_zero_flag = true;
 				curr_pack_count = 0;
 
@@ -511,13 +631,7 @@ namespace vp100_lidar
 
 			//data process 
 			if(node.lidar_angle_zero_flag){
-				uint32_t  all_pack_time;
-				uint32_t  all_count = 0;
-				uint32_t  circle_count = 0;
-
 				circleDataInfo.lidarCircleNodePoints = node_point_list;	//get time stamp 
-				all_count = node_point_list.size();
-				circle_count = curr_circle_count;
 
 				circleDataInfo.lidarCircleNodePoints.assign(node_point_list.begin(),node_point_list.begin() + curr_circle_count);		//get pre data 	
 				node_point_list.erase(node_point_list.begin(),node_point_list.begin() + curr_circle_count);								//after data 
@@ -526,9 +640,14 @@ namespace vp100_lidar
 				//get time stamp 
 				circleDataInfo.startStamp = circleDataInfo.stopStamp;
 				circleDataInfo.stopStamp = packageStamp;
-				//按比例重算结束时间 因为一包固定128点 0位可能出在任意位置  会影响时间戳精确度 
-				//printf("pack_num:%d,indx:%d\r\n", circleDataInfo.lidarCircleNodePoints.size(), pack_point.package0CIndex);
-				setCircleResponseUnlock();		//thread unlock 
+
+				circleDataInfo.error_code = VP100_ERROR_CODE_NORMAL;		//normal/no fault 
+
+				if(false == m_first_circle_finish){
+					m_first_circle_finish = true;
+				}else{
+					setCircleResponseUnlock();		//thread unlock 
+				}
 			}
     	}
 	}
@@ -580,7 +699,9 @@ namespace vp100_lidar
 
 			//find circle start 
 			if(cur_angle < last_angle_point){
-				packageStamp = getStamp();
+				if(get_timestamp != nullptr){
+					packageStamp = get_timestamp();
+				}
 				node.lidar_angle_zero_flag = true;
 				curr_pack_count = 0;
 
@@ -604,13 +725,7 @@ namespace vp100_lidar
 
 			//data process 
 			if(node.lidar_angle_zero_flag){
-				uint32_t  all_pack_time;
-				uint32_t  all_count = 0;
-				uint32_t  circle_count = 0;
-
 				circleDataInfo.lidarCircleNodePoints = node_point_list;	//get time stamp 
-				all_count = node_point_list.size();
-				circle_count = curr_circle_count;
 
 				circleDataInfo.lidarCircleNodePoints.assign(node_point_list.begin(),node_point_list.begin() + curr_circle_count);		//get pre data 	
 				node_point_list.erase(node_point_list.begin(),node_point_list.begin() + curr_circle_count);								//after data 
@@ -620,7 +735,13 @@ namespace vp100_lidar
 				circleDataInfo.startStamp = circleDataInfo.stopStamp;
 				circleDataInfo.stopStamp = packageStamp;
 
-				setCircleResponseUnlock();		//thread unlock 
+				circleDataInfo.error_code = VP100_ERROR_CODE_NORMAL;		//normal/no fault 
+
+				if(false == m_first_circle_finish){
+					m_first_circle_finish = true;
+				}else{
+					setCircleResponseUnlock();		//thread unlock 
+				}
 			}
     	}
 	}
@@ -672,7 +793,9 @@ namespace vp100_lidar
 
 			//find circle start 
 			if(cur_angle < last_angle_point){
-				packageStamp = getStamp();
+				if(get_timestamp != nullptr){
+					packageStamp = get_timestamp();
+				}
 				node.lidar_angle_zero_flag = true;
 				curr_pack_count = 0;
 
@@ -696,13 +819,7 @@ namespace vp100_lidar
 
 			//data process 
 			if(node.lidar_angle_zero_flag){
-				uint32_t  all_pack_time;
-				uint32_t  all_count = 0;
-				uint32_t  circle_count = 0;
-
 				circleDataInfo.lidarCircleNodePoints = node_point_list;	//get time stamp 
-				all_count = node_point_list.size();
-				circle_count = curr_circle_count;
 
 				circleDataInfo.lidarCircleNodePoints.assign(node_point_list.begin(),node_point_list.begin() + curr_circle_count);		//get pre data 	
 				node_point_list.erase(node_point_list.begin(),node_point_list.begin() + curr_circle_count);								//after data 
@@ -712,9 +829,177 @@ namespace vp100_lidar
 				circleDataInfo.startStamp = circleDataInfo.stopStamp;
 				circleDataInfo.stopStamp = packageStamp;
 
-				setCircleResponseUnlock();		//thread unlock 
+				circleDataInfo.error_code = VP100_ERROR_CODE_NORMAL;		//normal/no fault 
+
+				if(false == m_first_circle_finish){
+					m_first_circle_finish = true;
+				}else{
+					setCircleResponseUnlock();		//thread unlock 
+				}
 			}
     	}
+	}
+
+	//Error Code 
+	void LidarDriverSerialport::PointCloudAnalysis_ErrorCode(VP100_Node_Package_Union *pack_buf_union){
+		uint8_t add_sum_value = 0;
+		// calc the add sum 
+		add_sum_value = checkAddSum(pack_buf_union->buf,sizeof(VP100_Error_Fault_TypeDef));
+		if(add_sum_value != pack_buf_union->buf[sizeof(VP100_Error_Fault_TypeDef) - 1]){
+			return;
+		}
+		// get the error infomation 
+		circleDataInfo.error_code = (VP100Lidar_ErrorFlagEnumTypeDef)pack_buf_union->vp100_error_fault_info.package_errorCode;
+		// printf("error code:%d\n",pack_buf_union->vp100_error_fault_info.package_errorCode);
+
+		setCircleResponseUnlock();		//thread unlock 
+	}
+
+	//lidar version info get  
+	void LidarDriverSerialport::LidarInfoAnalysis(VP100_Node_Package_Union *pack_buf_union){
+		uint8_t add_sum_value = 0;
+		if((0x55 == pack_buf_union->buf[0]) && (0xAA != pack_buf_union->buf[1])){     //0x55 0xXX downboard info 
+			//calc the checksum 
+			add_sum_value = checkAddSum(pack_buf_union->buf,pack_buf_union->vp100_lidar_info_downboard.package_length + 4);
+			if(add_sum_value != pack_buf_union->buf[pack_buf_union->vp100_lidar_info_downboard.package_length + 3]){
+				return;
+			}
+			//unpack 
+			switch (pack_buf_union->vp100_lidar_info_downboard.package_cmd) {
+				case 0xAB:{
+					std::string str;
+					vp100_lidar_info.downBoard_Model = str.assign((char *)pack_buf_union->vp100_lidar_info_downboard.package_data,
+																	pack_buf_union->vp100_lidar_info_downboard.package_length);
+	              	// printf("%s\n",vp100_lidar_info.downBoard_Model.c_str());
+					break;
+				}
+				case 0xAC:{
+					std::string str;
+					vp100_lidar_info.downBoard_HardVersion = str.assign((char *)pack_buf_union->vp100_lidar_info_downboard.package_data,
+																		pack_buf_union->vp100_lidar_info_downboard.package_length);
+	                // printf(vp100_lidar_info.downBoard_HardVersion.c_str());
+					break;
+				}
+				case 0xAD:{
+					std::string str;
+					vp100_lidar_info.downBoard_SoftVersion = str.assign((char *)pack_buf_union->vp100_lidar_info_downboard.package_data,
+																		pack_buf_union->vp100_lidar_info_downboard.package_length);
+					// printf(vp100_lidar_info.downBoard_SoftVersion);
+					break;
+				}
+				case 0xAE:{
+					vp100_lidar_info.downBoard_ID = hexBytesToString((char *)pack_buf_union->vp100_lidar_info_downboard.package_data,
+																		pack_buf_union->vp100_lidar_info_downboard.package_length);
+	                // printf(vp100_lidar_info.downBoard_ID);
+					break;
+				}
+				case 0xAF:{
+					std::string str;
+					vp100_lidar_info.downBoard_Date = str.assign((char *)pack_buf_union->vp100_lidar_info_downboard.package_data,
+																 pack_buf_union->vp100_lidar_info_downboard.package_length);
+	                // printf(vp100_lidar_info.downBoard_Date);
+					break;
+				}
+				case 0xB0:{
+					std::string str;
+					vp100_lidar_info.downBoard_InputVoltage = str.assign((char *)pack_buf_union->vp100_lidar_info_downboard.package_data,
+																			pack_buf_union->vp100_lidar_info_downboard.package_length);
+					vp100_lidar_info.downBoard_InputVoltage.insert(1,1,'.');
+	                // printf(vp100_lidar_info.downBoard_InputVoltage);
+					break;
+				}
+				case 0xB6:{
+					vp100_lidar_info.downBoard_ID = hexBytesToString((char *)pack_buf_union->vp100_lidar_info_downboard.package_data,
+																		pack_buf_union->vp100_lidar_info_downboard.package_length);
+	             	// printf(vp100_lidar_info.downBoard_UID);
+					break;
+				}
+				case 0xBA:{
+					vp100_lidar_info.upBoard_VBD = pack_buf_union->vp100_lidar_info_downboard.package_data[0];
+					vp100_lidar_info.upBoard_TDC = pack_buf_union->vp100_lidar_info_downboard.package_data[1];
+					vp100_lidar_info.upBoard_Temperature = pack_buf_union->vp100_lidar_info_downboard.package_data[2];
+					// printf("vbd:%d,tdc:%d,temp:%d\n",vp100_lidar_info.upBoard_VBD,vp100_lidar_info.upBoard_TDC,vp100_lidar_info.upBoard_Temperature);
+
+					//unlock for the response 
+					protocol_receive_flag = true;
+					setNormalResponseUnlock();
+					break;
+				}
+				case 0xB7:{
+					std::string str;
+					vp100_lidar_info.downBoard_BuildTime = str.assign((char *)pack_buf_union->vp100_lidar_info_downboard.package_data,
+																		pack_buf_union->vp100_lidar_info_downboard.package_length);
+					//  printf(vp100_lidar_info.downBoard_BuildTime);
+					break;
+				}
+				default:{
+					break;
+				}
+			}
+		}else if((0xA5 == pack_buf_union->buf[0]) && (0xAB == pack_buf_union->buf[1])){  //0xA5 0xAB upboard info 
+			//calc the checksum 
+			add_sum_value = checkAddSum(pack_buf_union->buf,pack_buf_union->vp100_lidar_info_upboard.package_length + 5);
+			if(add_sum_value != pack_buf_union->buf[pack_buf_union->vp100_lidar_info_upboard.package_length + 4]){
+				return;
+			}
+			//unpack 
+			switch (pack_buf_union->vp100_lidar_info_upboard.package_cmd) {
+				case 0x13:{
+					vp100_lidar_info.upBoard_ID = hexBytesToString((char *)pack_buf_union->vp100_lidar_info_upboard.package_data,
+																		pack_buf_union->vp100_lidar_info_upboard.package_length);
+	            	// printf(vp100_lidar_info.upBoard_ID);
+					break;
+				}
+				case 0x14:{
+					std::string str;
+					vp100_lidar_info.upBoard_Date = str.assign((char *)pack_buf_union->vp100_lidar_info_upboard.package_data,
+																pack_buf_union->vp100_lidar_info_upboard.package_length);
+					// printf(vp100_lidar_info.upBoard_Date);
+					break;
+				}
+				case 0x16:{
+					std::string str;
+					vp100_lidar_info.upBoard_Model = str.assign((char *)pack_buf_union->vp100_lidar_info_upboard.package_data,
+																	pack_buf_union->vp100_lidar_info_upboard.package_length);
+					// printf(vp100_lidar_info.upBoard_Model);
+					break;
+				}
+				case 0x17:{
+					std::string str;
+					vp100_lidar_info.upBoard_HardVersion = str.assign((char *)pack_buf_union->vp100_lidar_info_upboard.package_data,
+																		pack_buf_union->vp100_lidar_info_upboard.package_length);
+					// printf(vp100_lidar_info.upBoard_HardVersion);
+					break;
+				}
+				case 0x18:{
+					std::string str;
+					vp100_lidar_info.upBoard_SoftVersion = str.assign((char *)pack_buf_union->vp100_lidar_info_upboard.package_data,
+																		pack_buf_union->vp100_lidar_info_upboard.package_length);
+					// printf(vp100_lidar_info.upBoard_SoftVersion);
+					break;
+				}
+				case 0x19:{
+					hexBytesToString((char *)pack_buf_union->vp100_lidar_info_upboard.package_data,
+										pack_buf_union->vp100_lidar_info_upboard.package_length);
+					// printf(vp100_lidar_info.upBoard_UID);
+
+					//last pack 
+					//unlock for the response 
+					//setNormalResponseUnlock();
+					break;
+				}
+				case 0x1A:{
+					std::string str;
+					vp100_lidar_info.upBoard_BuildTime = str.assign((char *)pack_buf_union->vp100_lidar_info_upboard.package_data,
+																		pack_buf_union->vp100_lidar_info_upboard.package_length);
+					// printf(vp100_lidar_info.upBoard_BuildTime);
+					break;
+				}
+				default:{
+					break;
+				}
+			}
+		}
 	}
 
 
@@ -880,8 +1165,7 @@ namespace vp100_lidar
     		pthread_mutex_init(&_mutex_point, NULL);
 
 			//create thread 
-     		if(-1 == pthread_create(&_thread, NULL, LidarDriverSerialport::periodThread, this))
-     		{
+     		if(-1 == pthread_create(&_thread, NULL, LidarDriverSerialport::periodThread, this)){
 				 _thread = -1;
          		return false;
 			}
@@ -932,8 +1216,7 @@ namespace vp100_lidar
 			state = pthread_cond_timedwait(&_cond_analysis, &_mutex_analysis, &outtime);
 			pthread_mutex_unlock(&_mutex_analysis);
 
-			if(0 == state)
-			{
+			if(0 == state){
 				return true;
 			}
 
@@ -942,11 +1225,11 @@ namespace vp100_lidar
 		return false;
 	}
 
-	//等待事件 解锁 
+	//wait for event unlock 
 	void LidarDriverSerialport::setNormalResponseUnlock()
 	{
 		#if	defined(_WIN32)
-			SetEvent(_event_analysis);			// 重置事件，让其他线程继续等待（相当于获取锁）
+			SetEvent(_event_analysis);			// wait the thread
 		#else 
 			pthread_mutex_lock(&_mutex_analysis);
     		pthread_cond_signal(&_cond_analysis);
@@ -954,13 +1237,13 @@ namespace vp100_lidar
 		#endif 
 	}
 
-	//等待一圈点云 事件 
+	//wait for circle unlock 
 	bool LidarDriverSerialport::LidarSamplingProcess(LidarScan &scan, uint32_t timeout)
 	{
-		//等待解锁  即一圈点数据完成了  
+		//wait for unlock 
 		#if	defined(_WIN32)
 			DWORD state;
-			ResetEvent(_event_circle);		// 重置事件，让其他线程继续等待（相当于获取锁）
+			ResetEvent(_event_circle);		// wait the thread
 			state = WaitForSingleObject(_event_circle, timeout);
 			if (state == WAIT_OBJECT_0)
 			{
@@ -984,7 +1267,7 @@ namespace vp100_lidar
 			pthread_mutex_unlock(&_mutex_point);
 
 			if(0 == state){
-				//点集格式转换 
+				//data change 
 				LidarSamplingData(circleDataInfo, scan);
 
 				return true;
@@ -994,37 +1277,34 @@ namespace vp100_lidar
 		return false;
 	}
 	
-	//采样数据分析  
+	//data analysis   
 	void LidarDriverSerialport::LidarSamplingData(CircleDataInfoTypeDef info, LidarScan &outscan){
-		uint32_t all_nodes_counts = 0;		//所有点数  不做截取等用法 
-		uint64_t scan_time = 0;				//2圈点的扫描间隔  
+		uint32_t all_nodes_counts = 0;		//all point 
+		uint64_t scan_time = 0;				//time spice  
 		uint64_t point_stamp = 0;			//point gap time 
 
-		//扫描时间 
+		//scan time  
 		scan_time = info.stopStamp - info.startStamp;
 
-		//原始数据  计数
+		//origin data count 
 		uint32_t lidar_ori_count = info.lidarCircleNodePoints.size();
 
-		//固定角分辨率 
-		if (lidar_cfg.resolution_fixed)
-		{
+		//fixed rate  
+		if (lidar_cfg.resolution_fixed){
 			all_nodes_counts = (uint32_t)(lidar_cfg.sampling_rate * 1000 / lidar_cfg.aim_speed);
 		}
-		else 	//非固定角分辨率 则是雷达默认一包多少点 就实际产生多少个点 
-		{
+		else{ 	//true points 
 			all_nodes_counts = lidar_ori_count;
 		}
 
-		//最大角与最小角问题 如是不对  则反转  
-		if (lidar_cfg.angle_max < lidar_cfg.angle_min)
-		{
+		//min and max angle 
+		if (lidar_cfg.angle_max < lidar_cfg.angle_min){
 			float temp = lidar_cfg.angle_min;
 			lidar_cfg.angle_min = lidar_cfg.angle_max;
 			lidar_cfg.angle_max = temp;
 		}
 
-		//以角度为比例  计算输出信息 
+		//output data 
 		outscan.stamp_start = info.startStamp;
 		outscan.stamp_stop = info.stopStamp;
 		if((all_nodes_counts > 1) && (info.startStamp > 0)){
@@ -1046,16 +1326,15 @@ namespace vp100_lidar
 		outscan.config.min_range = lidar_cfg.range_min;
 		outscan.config.max_range = lidar_cfg.range_max;
 
-		//初始化变量  
+		//init var   
 		float dist = 0.0;
 		float angle = 0.0;
 		float intensity = 0.0;
 		unsigned int i = 0;
 		outscan.points.clear();		//clear vector 
 
-		//从雷达原始数据中  提取数据  
-		for (; i < lidar_ori_count; i++)
-		{
+		//get the data from raw data 
+		for (; i < lidar_ori_count; i++) {
 			dist = static_cast<float>(info.lidarCircleNodePoints.at(i).lidar_distance / 1000.f);
 			intensity = static_cast<float>(info.lidarCircleNodePoints.at(i).lidar_quality);
 			angle = static_cast<float>(info.lidarCircleNodePoints.at(i).lidar_angle);
@@ -1063,21 +1342,17 @@ namespace vp100_lidar
 			point_stamp = static_cast<uint64_t>(info.startStamp + (i*info.differStamp));
 
 			//Rotate 180 degrees or not
-			if (lidar_cfg.reversion)
-			{
+			if (lidar_cfg.reversion){
 				angle = angle + M_PI;
 			}
 			//Is it counter clockwise
-			if (!lidar_cfg.inverted)
-			{
+			if (!lidar_cfg.inverted){
 				angle = 2 * M_PI - angle;
 			}
 
-			//忽略点（事先配置好哪个角度的范围）
-			if (lidar_cfg.ignore_array.size() != 0)
-			{
-				for (uint16_t j = 0; j < lidar_cfg.ignore_array.size(); j = j + 2)
-				{
+			//ignore points 
+			if (lidar_cfg.ignore_array.size() != 0){
+				for (uint16_t j = 0; j < lidar_cfg.ignore_array.size(); j = j + 2){
 					double angle_start = lidar_cfg.ignore_array[j] * M_PI / 180.0;
 					double angle_end = lidar_cfg.ignore_array[j + 1] * M_PI / 180.0;
 
@@ -1093,19 +1368,17 @@ namespace vp100_lidar
 
 			//-pi ~ pi
 			angle = fmod(fmod(angle, 2.0 * M_PI) + 2.0 * M_PI, 2.0 * M_PI);
-			if (angle > M_PI)
-			{
+			if (angle > M_PI){
 				angle -= 2.0 * M_PI;
 			}
 
-			//距离是否在有效范围内 
-			if (dist > lidar_cfg.range_max || dist < lidar_cfg.range_min)
-			{
+			//distance valid? 
+			if (dist > lidar_cfg.range_max || dist < lidar_cfg.range_min){
 				dist = 0.0;
 				intensity = 0.0;
 			}
 
-			//角度是否在有效范围内 
+			//angle valid? 
 			if ((angle >= outscan.config.min_angle) &&
 				(angle <= outscan.config.max_angle)){
 				NviLidarPoint point;
@@ -1118,16 +1391,19 @@ namespace vp100_lidar
 			}
 		}
 		//fill 
-		if (lidar_cfg.resolution_fixed)
-		{
+		if (lidar_cfg.resolution_fixed){
 			int output_count = all_nodes_counts * ((outscan.config.max_angle - outscan.config.min_angle) / M_PI / 2);
 			outscan.points.resize(output_count);
-		}	
+		}
+		//error code 
+		outscan.error_code = info.error_code;
+		if(outscan.error_code != VP100_ERROR_CODE_NORMAL){
+			outscan.points.clear();
+		}
 	}
 
 	//wait for a circle data  
-	void LidarDriverSerialport::setCircleResponseUnlock()
-	{
+	void LidarDriverSerialport::setCircleResponseUnlock() {
 		#if	defined(_WIN32)
 			SetEvent(_event_circle);			// get lock 
 		#else 
@@ -1141,7 +1417,6 @@ namespace vp100_lidar
 	#if	defined(_WIN32)
 		DWORD WINAPI  LidarDriverSerialport::periodThread(LPVOID lpParameter)
 		{
-			static uint8_t recv_data[8192];
 			size_t recv_len = 0;
 
 			//在线程中要做的事情
@@ -1150,9 +1425,9 @@ namespace vp100_lidar
 			while (pObj->lidar_state.m_CommOpen){	
 				//解包处理 ==== 点云解包 
 				//读串口接收数据长度 
-				recv_len = pObj->serialport.serialReadData(recv_data, 8192);
+				recv_len = pObj->serialport.serialReadData(pObj->recv_data, 8192);
 				if ((recv_len > 0) && (recv_len <= 8192)){
-					pObj->PointDataUnpack(recv_data, recv_len);
+					pObj->PointDataUnpack(pObj->recv_data, recv_len);
 				}
 
 				delayMS(1);		//必须要加sleep 不然会超高占用cpu	
@@ -1164,7 +1439,6 @@ namespace vp100_lidar
 		/* 定义线程pthread */
 	   	void * LidarDriverSerialport::periodThread(void *lpParameter)       
 		{
-			static uint8_t recv_data[8192];
 			size_t recv_len = 0;
 
 			//在线程中要做的事情
@@ -1173,12 +1447,12 @@ namespace vp100_lidar
 			while (pObj->lidar_state.m_CommOpen){	
 				//解包处理 ==== 点云解包 
 				//读串口接收数据长度 
-				recv_len = pObj->serialport.serialReadData(recv_data, 8192);
+				recv_len = pObj->serialport.serialReadData(pObj->recv_data, 8192);
 				if((recv_len > 0) && (recv_len <= 8192)){
-					pObj->PointDataUnpack(recv_data, recv_len);
+					pObj->PointDataUnpack(pObj->recv_data, recv_len);
 				}
 
-				delayMS(1);		//必须要加sleep 不然会超高占用cpu	
+				vp100_lidar::TimeStamp::sleepMS(1);		//必须要加sleep 不然会超高占用cpu	
 			}
 
 			return 0;

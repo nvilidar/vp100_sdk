@@ -73,43 +73,49 @@
 ### 5. void LidarProcess::LidarCloseHandle()
 	lidar close serialport/socket 
 
-## How to run NVILIDAR SDK samples
+## How to run VP100 Lidar SDK samples
     $ cd samples
 
 linux:
 
-	$ ./nvilidar_test
+	$ ./vp100_lidar_test
 
 windows:
 
-	$ nvilidar_test.exe
+	$ vp100_lidar_test.exe
 
 You should see NVILIDAR's scan result in the console:
 
-   _   ___      _______ _      _____ _____          _____ 
-	| \ | \ \    / /_   _| |    |_   _|  __ \   /\   |  __ \
-	|  \| |\ \  / /  | | | |      | | | |  | | /  \  | |__) |
-	| . ` | \ \/ /   | | | |      | | | |  | |/ /\ \ |  _  / 
-	| |\  |  \  /   _| |_| |____ _| |_| |__| / ____ \| | \ \
-	|_| \_|   \/   |_____|______|_____|_____/_/    \_\_|  \ \
+```
+ _   ___      _______ _      _____ _____          _____ 
+| \ | \ \    / /_   _| |    |_   _|  __ \   /\   |  __ \
+|  \| |\ \  / /  | | | |      | | | |  | | /  \  | |__) |
+| . ` | \ \/ /   | | | |      | | | |  | |/ /\ \ |  _  / 
+| |\  |  \  /   _| |_| |____ _| |_| |__| / ____ \| | \ \
+|_| \_|   \/   |_____|______|_____|_____/_/    \_\_|  \ \
 
-	Current sdk supports vp100 lidar 
-	the srialport baudrate can be 115200bps or 230400bps
-	[NVILidar]: [NVILIDAR INFO] Now NVILIDAR is scanning ......
-	[NVILidar]: Scan received[1683876754134474857]: 499 ranges is [5.789838]Hz
-	[NVILidar]: Scan received[1683876754307191244]: 499 ranges is [6.162893]Hz
-	[NVILidar]: Scan received[1683876754469452693]: 499 ranges is [6.160737]Hz
-	[NVILidar]: Scan received[1683876754631770939]: 499 ranges is [5.798543]Hz
-	[NVILidar]: Scan received[1683876754804228050]: 500 ranges is [6.171116]Hz
-	[NVILidar]: Scan received[1683876754966273297]: 499 ranges is [5.813266]Hz
-	[NVILidar]: Scan received[1683876755138293634]: 501 ranges is [6.195767]Hz
-	[NVILidar]: Scan received[1683876755299694141]: 501 ranges is [6.181950]Hz
-	[NVILidar]: Scan received[1683876755461455401]: 503 ranges is [5.811990]Hz
-	[NVILidar]: Scan received[1683876755633513508]: 501 ranges is [5.816296]Hz
-	[NVILidar]: Scan received[1683876755805444218]: 502 ranges is [6.182780]Hz
-	[NVILidar]: Scan received[1683876755967183747]: 501 ranges is [6.165780]Hz
-	[NVILidar]: Scan received[1683876756129369224]: 502 ranges is [5.807845]Hz
-	[NVILidar]: Scan received[1683876756301550129]: 503 ranges is [5.804401]Hz
+Current sdk supports vp100 lidar 
+the srialport baudrate can be 115200bps or 230400bps
+
+VP100 Lidar Device Info:
+
+Model        : BZ_VP100_L
+Soft Version : V1.3
+Hard Version : V1.3
+ID           : 0000001E
+Date         : 2024/01/15
+
+
+[VP100 Message]: Now NVILIDAR is scanning ......
+Scan received[start:1711347547755222329 | stop:1711347547922659807 | differ:333540]: 503 ranges is [5.972379]Hz
+Scan received[start:1711347547922659807 | stop:1711347548091464482 | differ:336935]: 502 ranges is [5.924007]Hz
+Scan received[start:1711347548091464482 | stop:1711347548258483381 | differ:333371]: 502 ranges is [5.987346]Hz
+Scan received[start:1711347548258483381 | stop:1711347548421780421 | differ:326594]: 501 ranges is [6.123810]Hz
+Scan received[start:1711347548421780421 | stop:1711347548590243477 | differ:336253]: 502 ranges is [5.936020]Hz
+Scan received[start:1711347548590243477 | stop:1711347548757392941 | differ:333631]: 502 ranges is [5.982669]Hz
+Scan received[start:1711347548757392941 | stop:1711347548925910475 | differ:336362]: 502 ranges is [5.934101]Hz
+
+```
 
 
 
