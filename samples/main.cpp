@@ -17,7 +17,7 @@
 using namespace vp100_lidar;
 
 #if defined(_MSC_VER)
-#pragma comment(lib, "nvilidar_driver.lib")
+#pragma comment(lib, "vp100_lidar_driver.lib")
 #endif
 
 //get stamp 

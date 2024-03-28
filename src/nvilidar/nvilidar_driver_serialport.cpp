@@ -6,6 +6,9 @@
 #include "myconsole.hpp"
 #include "mytimer.hpp"
 #include <iomanip>
+#include <iostream>
+#include <fstream>
+#include <sstream>
 
 namespace vp100_lidar
 {
@@ -1430,7 +1433,7 @@ namespace vp100_lidar
 					pObj->PointDataUnpack(pObj->recv_data, recv_len);
 				}
 
-				delayMS(1);		//必须要加sleep 不然会超高占用cpu	
+				vp100_lidar::TimeStamp::sleepMS(1);		//必须要加sleep 不然会超高占用cpu	
 			}
 
 			return 0;
