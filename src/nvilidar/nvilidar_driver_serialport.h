@@ -75,9 +75,10 @@ namespace vp100_lidar
 
 		private:
 			uint16_t LidarCheckCRC(uint8_t *data, uint16_t len);				//check crc value  
+			uint8_t T10CheckCrc(uint8_t *data, uint16_t len);					//t10 protocol check 
 			uint8_t checkAddSum(uint8_t *data, uint16_t len);					//check add sum info 
 			std::string hexBytesToString(const char* data, size_t length);		//hex bytes to string 
-			bool LidarConnect(std::string portname, uint32_t baud = 921600);  	//serialport init 
+			bool LidarConnect(const std::string portname, const uint32_t baud = 921600);  	//serialport init 
 			void LidarDisconnect();      //close serialport 
 			bool SendSerial(const uint8_t *data, size_t size);      //send data to serail 
 			void FlushSerial();		//flush serialport data 
@@ -88,6 +89,7 @@ namespace vp100_lidar
 			void PointCloudAnalysis_Normal_Quality(VP100_Node_Package_Union *pack_buf_union);	 //has quality 	
 			void PointCloudAnalysis_YW_Quality(VP100_Node_Package_Union *pack_buf_union);		 //yw quality 		
 			void PointCloudAnalysis_FS_Test_Quality(VP100_Node_Package_Union *pack_buf_union);	 //fs quality 
+			void PointCloudAnalysis_T10_Quality(VP100_Node_Package_Union *pack_buf_union);		 //t10 quality 	
 			void PointCloudAnalysis_ErrorCode(VP100_Node_Package_Union *pack_buf_union);		 //error code 
 			void LidarInfoAnalysis(VP100_Node_Package_Union *pack_buf_union);				     //lidar info analysis 
 			

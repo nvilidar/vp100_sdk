@@ -130,6 +130,15 @@ namespace vp100_lidar
 		return crc_value;
 	}
 
+	//T10 check crc 
+	uint8_t LidarDriverSerialport::T10CheckCrc(uint8_t *data, uint16_t len) {
+		uint8_t crc = 0;
+		for (uint16_t i = 0; i < len; i++){
+			crc = T10_CrcTable[(crc ^ *data++) & 0xff];
+		}
+		return crc;
+	}
+
 	//check add sum 
 	uint8_t LidarDriverSerialport::checkAddSum(uint8_t *data, uint16_t len) {
 		uint8_t check_sum_value = 0;
@@ -203,7 +212,7 @@ namespace vp100_lidar
 	}
 
 	//lidar connect via serialport 
-	bool LidarDriverSerialport::LidarConnect(std::string portname, uint32_t baud){
+	bool LidarDriverSerialport::LidarConnect(const std::string portname, const uint32_t baud){
 		serialport.serialInit(portname,baud);
 		serialport.serialOpen();
 		
@@ -326,8 +335,9 @@ namespace vp100_lidar
 				case 0: {    		//first byte 
 					if (byte == (uint8_t)(NVILIDAR_POINT_HEADER & 0xFF)){	
 						recv_pos++;   
-					}
-					else if(0xA5 == byte){
+					}else if(byte == (uint8_t)(NVILIDAR_T10_POINT_HEADER & 0xFF)){
+						recv_pos++;
+					}else if(0xA5 == byte){
                         recv_pos++;
                     }else {        	//check failed 		
 						recv_pos = 0;
@@ -343,6 +353,14 @@ namespace vp100_lidar
 						}else if( (0xAB == byte) || (0xAC == byte) || (0xAD == byte) || (0xAE == byte) || 
 								  (0xAF == byte) || (0xB0 == byte) || (0xB6 == byte) || (0xB7 == byte) ||
 							      (0xBA == byte)) {
+							recv_pos++;
+						}else{
+							recv_pos = 0;
+						}
+					}
+					//t10 protocol
+					else if((uint8_t)(NVILIDAR_T10_POINT_HEADER & 0xFF) == pack_buf_union.buf[0]){
+						if(byte == (uint8_t)(NVILIDAR_T10_POINT_HEADER >> 8)){
 							recv_pos++;
 						}else{
 							recv_pos = 0;
@@ -381,7 +399,10 @@ namespace vp100_lidar
 								lidar_model_code = (int)(byte << 8);		//high 8 bit 
 								recv_pos++;
 							}
-                    }else{
+                    }else if( ((uint8_t)(NVILIDAR_T10_POINT_HEADER & 0xFF) == pack_buf_union.buf[0]) && 
+							  ((uint8_t)(NVILIDAR_T10_POINT_HEADER >> 8) == pack_buf_union.buf[1]) ){
+						recv_pos++;
+					}else{
                         recv_pos = 0;
                     }
 					break;
@@ -410,6 +431,11 @@ namespace vp100_lidar
 							pack_size = 0;
 							recv_pos = 0;
 						}
+					}else if( ((uint8_t)(NVILIDAR_T10_POINT_HEADER & 0xFF) == pack_buf_union.buf[0]) && 
+							  ((uint8_t)(NVILIDAR_T10_POINT_HEADER >> 8) == pack_buf_union.buf[1]) ){
+						lidar_model_code = PROTOCOL_T10_MODEL_QUAILIY;   //T10 lidar
+						pack_size = GET_LIDAR_DATA_SIZE(lidar_model_code);	//取到当前包字节总长
+						recv_pos++;
 					}
 					break;
                 }	
@@ -423,11 +449,9 @@ namespace vp100_lidar
 					if(pack_size - 1 == recv_pos){
 						if((0x55 == pack_buf_union.buf[0]) && (0xAA != pack_buf_union.buf[1])){			//0xA5 0xXX
 							LidarInfoAnalysis(&pack_buf_union);		//downboard info 
-						}
-						else if((0xA5 == pack_buf_union.buf[0]) && (0xAB == pack_buf_union.buf[1])){	//0xA5 0xAB
+						}else if((0xA5 == pack_buf_union.buf[0]) && (0xAB == pack_buf_union.buf[1])){	//0xA5 0xAB
 							LidarInfoAnalysis(&pack_buf_union);		//upboard info 
-						}
-						else if((0x55 == pack_buf_union.buf[0]) && (0xAA == pack_buf_union.buf[1])) {  	//0x55 0xAA
+						}else if((0x55 == pack_buf_union.buf[0]) && (0xAA == pack_buf_union.buf[1])) {  	//0x55 0xAA
 							switch(lidar_model_code){
 								case PROTOCOL_VP100_NORMAL_NO_QUALITY:{
 									PointCloudAnalysis_Normal_NoQuality(&pack_buf_union);
@@ -453,6 +477,17 @@ namespace vp100_lidar
 									break;
 								}
 							}
+						}else if( ((uint8_t)(NVILIDAR_T10_POINT_HEADER & 0xFF) == pack_buf_union.buf[0]) && 
+							  ((uint8_t)(NVILIDAR_T10_POINT_HEADER >> 8) == pack_buf_union.buf[1]) ){
+							switch(lidar_model_code){
+								case PROTOCOL_T10_MODEL_QUAILIY:{
+									PointCloudAnalysis_T10_Quality(&pack_buf_union);
+									break;
+								}
+								default:{
+									break;
+								}
+							}		
 						}
 						//clear the buffer 
 						memset(pack_buf_union.buf,0x00,sizeof(VP100_Node_Package_Union));
@@ -793,6 +828,95 @@ namespace vp100_lidar
 			uint16_t cur_quality = pack->vp100_fs_test_quality.package_Sample[j].PakageSampleQuality;
 			//speed 
 			double cur_speed = (double)(pack_buf_union.vp100_fs_test_quality.package_speed) / 64.0;
+
+			//find circle start 
+			if(cur_angle < last_angle_point){
+				if(get_timestamp != nullptr){
+					packageStamp = get_timestamp();
+				}
+				node.lidar_angle_zero_flag = true;
+				curr_pack_count = 0;
+
+			}else{
+				node.lidar_angle_zero_flag = false;
+				curr_pack_count++;
+			}
+			last_angle_point = cur_angle;
+
+			//points analysis 
+			node.lidar_distance = 	cur_distance;   //distance
+			node.lidar_angle =  	cur_angle;		//angle 
+			node.lidar_quality = 	cur_quality;	//cur quality 
+			node.lidar_speed = 		cur_speed;  	//speed 
+			node.lidar_index = 		j;              //index	
+			//add to vector  
+			if(node.lidar_angle_zero_flag){
+				curr_circle_count = node_point_list.size();		//add to vector  
+			}
+			node_point_list.push_back(node);	
+
+			//data process 
+			if(node.lidar_angle_zero_flag){
+				circleDataInfo.lidarCircleNodePoints = node_point_list;	//get time stamp 
+
+				circleDataInfo.lidarCircleNodePoints.assign(node_point_list.begin(),node_point_list.begin() + curr_circle_count);		//get pre data 	
+				node_point_list.erase(node_point_list.begin(),node_point_list.begin() + curr_circle_count);								//after data 
+				curr_circle_count = 0;
+
+				//get time stamp 
+				circleDataInfo.startStamp = circleDataInfo.stopStamp;
+				circleDataInfo.stopStamp = packageStamp;
+
+				circleDataInfo.error_code = VP100_ERROR_CODE_NORMAL;		//normal/no fault 
+
+				if(false == m_first_circle_finish){
+					m_first_circle_finish = true;
+				}else{
+					setCircleResponseUnlock();		//thread unlock 
+				}
+			}
+    	}
+	}
+
+	//T10 has quality 
+	void LidarDriverSerialport::PointCloudAnalysis_T10_Quality(VP100_Node_Package_Union *pack){
+		uint64_t packageStamp = 0;			//the time stamp 
+		//=====crc compare 
+		uint8_t crc_get = pack_buf_union.vp100_t10_quality.package_checkSum;
+		uint16_t crc_calc = T10CheckCrc(pack_buf_union.buf,sizeof(VP100_T10_Node_Package_Quality)-1);
+		if(crc_calc != crc_get) {
+			return;
+		}
+
+		//=====calculate angle & distance 
+		//angle apart 
+		double angle_differ = 0.0;
+
+		uint16_t first_angle = pack_buf_union.vp100_t10_quality.package_firstSampleAngle;
+		uint16_t last_angle =  pack_buf_union.vp100_t10_quality.package_lastSampleAngle;
+		if(last_angle >= first_angle){      //start angle > end angle 
+			angle_differ = ((double)(last_angle - first_angle)/(T10_HAS_QUALITY_PACK_MAX_POINTS - 1))/100.0;
+		}else {
+			angle_differ = ((double)(last_angle + (360*100) - first_angle)/(T10_HAS_QUALITY_PACK_MAX_POINTS - 1))/100.0;
+		}
+		double first_angle_true = (double)(first_angle)/100.0;
+
+		//distance apart 
+    	for(int j = 0; j<T10_HAS_QUALITY_PACK_MAX_POINTS; j++) {
+			//the node info 
+			Nvilidar_Node_Info node;
+			//get the angle 
+			double cur_angle = first_angle_true + angle_differ*j;
+			if(cur_angle >= 360.0){
+				cur_angle -= 360.0;
+			}
+			//get distance  
+			uint16_t cur_distance_u16 = pack->vp100_t10_quality.package_Sample[j].PakageSampleDistance;
+			double cur_distance = (double)(cur_distance_u16);
+			//get quality 
+			uint8_t cur_quality = pack->vp100_t10_quality.package_Sample[j].PakageSampleQuality;
+			//speed 
+			double cur_speed = (double)(pack_buf_union.vp100_t10_quality.package_speed);
 
 			//find circle start 
 			if(cur_angle < last_angle_point){

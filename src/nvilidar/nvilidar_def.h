@@ -9,7 +9,7 @@
 //======================================basic parameter============================================ 
 
 //SDK version 
-#define NVILIDAR_SDKVerision     "1.0.3"
+#define NVILIDAR_SDKVerision     "1.0.4"
 
 //PI def
 #ifndef M_PI
