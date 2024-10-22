@@ -1,17 +1,20 @@
-# NVILIDAR SDK DRIVER
+# VP100/T10 SDK DRIVER
 
-## How to build NVILIDAR SDK samples
+## How to build SDK samples
 
-### 1.Get the SDK code
+### 1. Lidar Support
+VP100 is a serial interface lidar,
+current ros support VP100 Lidar,the baudrate can be 115200bsp or 230400bps 
+
+### 2.Get the SDK code
     1) Clone this project to your catkin's workspace src folder
     	$ git clone https://gitee.com/nvilidar/vp100_sdk.git       
 		or
-		$ git clone https://github.com/nvilidar/vp100_sdk_sdk.git
+		$ git clone https://github.com/nvilidar/vp100_sdk.git
 
     2) download the sdk code from our webset,  http://www.nvistar.com/?jishuzhichi/xiazaizhongxin
 
-
-### 2.build the SDK
+### 3.build the SDK
 	1) linux
 		$ cd sdk
 		$ cd ..
@@ -27,114 +30,148 @@
 		$ cmake ../vp100_sdk
 		$ make	
 		then you can open "Project.sln" to open the visual studio.
-	you can also Open the "CMakeLists.txt" directly with VS2017 or later
+	you can also Open the "CMakeLists.txt" directly with VS2017 or later 
 
-### 3.Serialport configuration
-    1) if you use the lidar device name,you must give the permissions to user.
-        ---whoami
-       get the user name.link ubuntu.
-        ---sudo usermod -a -G dialout ubuntu
-       ubuntu is the user name.
-        ---sudo reboot   
+    and you can also use vscode to build and run.
 
-## ROS Parameter Configuration
-### 1. Lidar Support
-    VP100 is a serial interface lidar,
-    current ros support VP100 Lidar,the baudrate can be 115200bsp or 230400bps 
+### 4.Serialport configuration
 
+#### linux
 
-### 2. Choice the SDKCommunication interface
+if you use the lidar device name,you must give the permissions to user.
+```shell
+whoami
+```
+get the user name.link ubuntu.
+```shell
+sudo usermod -a -G dialout ubuntu
+```
+ubuntu is the user name.
+```shell
+sudo reboot   
+```
 
-	(1). if you want use the serialport,you neet to change the code from "nvilidar_node.cpp",change the code like this:
+#### windows 
+if you want to use the serialport to get the lidar,you neet to use usb to serialport tool.we suggest [CP2102](https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers?tab=downloads)
 
-## Interface function definition
-### 1. bool LidarProcess::LidarInitialialize()
-    Initialize the lidar, including opening the serial/socket interface and synchronizing the radar with the SDK parameter information
-	if initial fail return false.
-### 2. bool LidarProcess::LidarTurnOn()
-	Turn on lidar scanning so that it can output point cloud data.
-### 3. bool LidarProcess::LidarSamplingProcess(LidarScan &scan, uint32_t timeout)
-	Real-time radar data output interface.
-	The LidarScan variables are described as follows:
- 
-|  value   | Element | define  |
-|  :----:  | :----:  | :----:  |
-|  stamp   | none    |  lidar stamps, unit ns|
-|  config  | min_angle   | lidar angle min value, 0~2*PI,Unit Radian|
-|          | max_angle   | lidar angle max value, 0~2*PI,Unit Radian|
-|          | angle_increment   | angular interval between 2 points, 0~2PI|
-|          | scan_time   | time interval of 2 turns of data|
-|          | min_range   | Distance measurement min, unit m|
-|          | max_range   | Distance measurement max, unit m|
-|  points  | angle       | lidar angle,0~2PI|
-|  | range       | lidar distance, unit m|
-### 4. bool LidarProcess::LidarTurnOff()
-	lidar turn off the scanning data 
-### 5. void LidarProcess::LidarCloseHandle()
-	lidar close serialport/socket 
-
-## How to run VP100 Lidar SDK samples
-    $ cd samples
+### 5.How to run VP100 Lidar SDK samples
+    $ cd example
 
 linux:
 
-	$ ./vp100_lidar_test
+	$ ./lidar_sdk_example
 
 windows:
 
-	$ vp100_lidar_test.exe
+	$ lidar_sdk_example
 
-You should see NVILIDAR's scan result in the console:
+You should see scan result in the console:
 
-```
- _   ___      _______ _      _____ _____          _____ 
-| \ | \ \    / /_   _| |    |_   _|  __ \   /\   |  __ \
-|  \| |\ \  / /  | | | |      | | | |  | | /  \  | |__) |
-| . ` | \ \/ /   | | | |      | | | |  | |/ /\ \ |  _  / 
-| |\  |  \  /   _| |_| |____ _| |_| |__| / ____ \| | \ \
-|_| \_|   \/   |_____|______|_____|_____/_/    \_\_|  \ \
+```shell
+ _   ___      _______  _____ _______       _____
+| \ | \ \    / /_   _|/ ____|__   __|/\   |  __ \
+|  \| |\ \  / /  | | | (___    | |  /  \  | |__) |
+| . ` | \ \/ /   | |  \___ \   | | / /\ \ |  _  /
+| |\  |  \  /   _| |_ ____) |  | |/ ____ \| | \ \
+|_| \_|   \/   |_____|_____/   |_/_/    \_\_|  \_\
 
-Current sdk supports vp100 lidar 
-the srialport baudrate can be 115200bps or 230400bps
+lidar is scanning...
 
-VP100 Lidar Device Info:
-
-Model        : BZ_VP100_L
-Soft Version : V1.3
-Hard Version : V1.3
-ID           : 0000001E
-Date         : 2024/01/15
-
-
-[VP100 Message]: Now NVILIDAR is scanning ......
-Scan received[start:1711347547755222329 | stop:1711347547922659807 | differ:333540]: 503 ranges is [5.972379]Hz
-Scan received[start:1711347547922659807 | stop:1711347548091464482 | differ:336935]: 502 ranges is [5.924007]Hz
-Scan received[start:1711347548091464482 | stop:1711347548258483381 | differ:333371]: 502 ranges is [5.987346]Hz
-Scan received[start:1711347548258483381 | stop:1711347548421780421 | differ:326594]: 501 ranges is [6.123810]Hz
-Scan received[start:1711347548421780421 | stop:1711347548590243477 | differ:336253]: 502 ranges is [5.936020]Hz
-Scan received[start:1711347548590243477 | stop:1711347548757392941 | differ:333631]: 502 ranges is [5.982669]Hz
-Scan received[start:1711347548757392941 | stop:1711347548925910475 | differ:336362]: 502 ranges is [5.934101]Hz
+speed(RPM):360.203125, size:500, timestamp_start:1729565824470524300, timestamp_stop:1729565824635999000, timestamp_differ:165474700
+speed(RPM):360.781250, size:500, timestamp_start:1729565824635999000, timestamp_stop:1729565824803479800, timestamp_differ:167480800
+speed(RPM):360.281250, size:500, timestamp_start:1729565824803479800, timestamp_stop:1729565824969486000, timestamp_differ:166006200
+speed(RPM):360.453125, size:500, timestamp_start:1729565824969486000, timestamp_stop:1729565825134193700, timestamp_differ:164707700
+speed(RPM):360.437500, size:501, timestamp_start:1729565825134193700, timestamp_stop:1729565825302385900, timestamp_differ:168192200
+speed(RPM):360.078125, size:501, timestamp_start:1729565825302385900, timestamp_stop:1729565825470086300, timestamp_differ:167700400
+speed(RPM):360.046875, size:501, timestamp_start:1729565825470086300, timestamp_stop:1729565825633854600, timestamp_differ:163768300
+speed(RPM):359.828125, size:501, timestamp_start:1729565825633854600, timestamp_stop:1729565825801537800, timestamp_differ:167683200
+speed(RPM):359.703125, size:500, timestamp_start:1729565825801537800, timestamp_stop:1729565825968564000, timestamp_differ:167026200
+speed(RPM):360.312500, size:501, timestamp_start:1729565825968564000, timestamp_stop:1729565826136569500, timestamp_differ:168005500
 
 ```
 
+```shell
+
+ _   ___      _______  _____ _______       _____
+| \ | \ \    / /_   _|/ ____|__   __|/\   |  __ \
+|  \| |\ \  / /  | | | (___    | |  /  \  | |__) |
+| . ` | \ \/ /   | |  \___ \   | | / /\ \ |  _  /
+| |\  |  \  /   _| |_ ____) |  | |/ ____ \| | \ \
+|_| \_|   \/   |_____|_____/   |_/_/    \_\_|  \_\
+
+lidar is scanning...
+
+speed(RPM):357.390625, size:503, timestamp_start:1729565992497166800, timestamp_stop:1729565992664471400, timestamp_differ:167304600
+angle:1.27, distance:1932.00, intensity:328.00, stamp:1729565992497166800
+angle:1.97, distance:1228.00, intensity:171.00, stamp:1729565992497499412
+angle:2.68, distance:1228.00, intensity:160.00, stamp:1729565992497832024
+angle:3.39, distance:1226.00, intensity:117.00, stamp:1729565992498164636
+angle:4.10, distance:1927.00, intensity:432.00, stamp:1729565992498497248
+angle:4.82, distance:1935.00, intensity:431.00, stamp:1729565992498829860
+angle:5.53, distance:1917.00, intensity:422.00, stamp:1729565992499162472
+
+```
 
 
-## NVILIDAR ROS Parameter
-|  value   |  information  |
-|  :----:    | :----:  |
-| serialport_baud  | if use serialport,the lidar's serialport |
-| serialport_name  | if use serialport,the lidar's port name |
-| frame_id  | it is useful in ros,lidar ros frame id |
-| resolution_fixed  | Rotate one circle fixed number of points,it is 'true' in ros,default |
-| auto_reconnect  | lidar auto connect,if it is disconnet in case |
-| reversion  | lidar's point revert|
-| inverted  | lidar's point invert|
-| angle_max  | lidar angle max value,max:180.0°|
-| angle_max  | lidar angle min value,min:-180.0°|
-| range_max  | lidar's max measure distance,default:64.0 meters|
-| range_min  | lidar's min measure distance,default:0.0 meters|
-| aim_speed  | lidar's run speed,default:10.0 Hz|
-| sampling_rate  | lidar's sampling rate,default:10.0 K points in 1 second|
-| angle_offset_change_flag  | angle offset enable to set,default:false|
-| angle_offset  | angle offset,default:0.0|
-| ignore_array_string  | if you want to filter some point's you can change it,it is anti-clockwise for the lidar.eg. you can set the value "30,60,90,120",you can remove the 30°-60° and 90°-120° points in the view|
+## SDK interface
+
+### 1.lidar_register
+```cpp
+void Lidar::lidar_register(lidar_interface_t* interface)
+```
+the function is used to register the timestamp and communicate interface to analysis
+
+the 'lidar_interface_t' struct:
+```cpp
+//callback function,it to be serailport,socket,etc...
+typedef struct{
+  std::function<int(const uint8_t* data,int length)> write;
+  std::function<int(uint8_t *data,int max_length)>  read;
+  std::function<void(void)> flush;
+}lidar_transmit_interface_t;
+//callback function
+typedef struct{
+  lidar_transmit_interface_t  transmit;
+  std::function<uint64_t(void)> get_timestamp;
+}lidar_interface_t;
+```
+### 2.lidar_get_scandata
+```cpp
+lidar_scan_status_t Lidar::lidar_get_scandata(lidar_scan_period_t &scan, uint32_t timeout)
+```
+the function is used to get the lidar points data 
+
+```cpp
+//single point info 
+typedef struct{
+    double    angle;      //degree
+    double    distance;   //mm
+    double    intensity;  
+    uint64_t  timestamp;  //from callback
+}lidar_scan_point_t;
+//point info for 1 period 
+typedef struct{
+  int       model_code;                   //lidar model code 
+  std::vector<lidar_scan_point_t> points; //one period points 
+  bool      intensity_flag;               //intensity?
+  double    speed;                        //RPM
+  int       error_code;                   //error code 
+  uint64_t  timestamp_start;              //stamp start 
+  uint64_t  timestamp_stop;               //stamp stop 
+}lidar_scan_period_t;
+```
+
+the function is used to get the status 
+
+```cpp
+//lidar return status 
+typedef enum{
+  LIDAR_SCAN_OK = 0,
+  LIDAR_SCAN_WAITING,
+  LIDAR_SCAN_TIMEOUT,
+  LIDAR_SCAN_ERROR_MOTOR_LOCK,
+  LIDAR_SCAN_ERROR_UP_NO_POINT,
+  LIDAR_SCAN_ERROR_MOTOR_SHORTCIRCUIT,
+  LIDAR_SCAN_ERROR_RESET,
+}lidar_scan_status_t;
+```
