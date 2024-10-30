@@ -19,6 +19,8 @@ namespace nvistar{
   #endif 
 #endif 
 
+#define LIDAR_SDK_VERSION   "2.0.1"
+
 class LidarImpl;     //forward declaration
 
 //lidar return status 
@@ -39,6 +41,7 @@ class DLL_EXPORT Lidar{
     void lidar_register(lidar_interface_t* interface);
     void lidar_unregister();
     lidar_scan_status_t lidar_get_scandata(lidar_scan_period_t &scan, uint32_t timeout = 2000);
+    std::string get_sdk_version();  
   private:
     LidarImpl *_impl;
     LidarProtocol *_protocol = nullptr;

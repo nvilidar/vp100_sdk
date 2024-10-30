@@ -1086,7 +1086,7 @@ void LidarProtocol::lidar_protocol_register(lidar_interface_t* api, protocol_raw
         #if defined(_WIN32)
            Sleep(1);
         #else 
-           usleep(5000);
+           usleep(1000);
         #endif 
       }
       std::this_thread::sleep_for(std::chrono::microseconds(100));

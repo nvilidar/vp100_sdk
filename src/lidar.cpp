@@ -30,6 +30,15 @@ Lidar::~Lidar(){
 }
 
 /**
+ * @Function: get_sdk_version
+ * @Description: get lidar sdk version 
+ * @Return: std::string 
+ */
+std::string Lidar::get_sdk_version(){
+  return LIDAR_SDK_VERSION;
+}
+
+/**
  * @Function: lidar_register
  * @Description: lidar register comm interface 
  * @Return: void
