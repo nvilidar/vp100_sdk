@@ -13,6 +13,13 @@ public:
   //var 
   HANDLE  _fd = INVALID_HANDLE_VALUE;   //File descriptor for the port
   bool open_flag = false;               //serial open flag
+  //serial var 
+  std::string port_name = "/dev/ttyUSB";
+  int baud_rate = 230400;
+  InterfaceSerial::serial_parity_t   parity = InterfaceSerial::ParityNone;
+  InterfaceSerial::serial_databits_t databits = InterfaceSerial::DataBits8;
+  InterfaceSerial::serial_stopbits_t stopbits = InterfaceSerial::StopOne;
+  InterfaceSerial::serial_flowcontrol_t flowcontrol = InterfaceSerial::FlowNone;
   
   //function 
 
@@ -262,6 +269,22 @@ void InterfaceSerial::serial_close(){
   //close 
   CloseHandle(_impl->_fd);
   _impl->_fd = INVALID_HANDLE_VALUE;
+}
+
+/**
+ * @Function: serial_reopen
+ * @Description: serial reopen 
+ * @Return: void 
+ */
+void InterfaceSerial::serial_reopen(){
+  //first close the serial 
+  serial_close();
+  //delay some times 
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  //reopen the serial 
+  serial_open(_impl->port_name, _impl->baud_rate,
+              _impl->parity, _impl->databits,_impl->stopbits, _impl->flowcontrol);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
 }
 
 /**

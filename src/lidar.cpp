@@ -8,6 +8,9 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <cmath>
+#include <utility>
+#include <vector>
 
 namespace nvistar{
 //pre define
@@ -77,6 +80,69 @@ void Lidar::lidar_register(lidar_interface_t* interface){
  */
 void Lidar::lidar_unregister(){
   _protocol->lidar_protocol_unregister();
+}
+
+/**
+ * @Function: angle_to_ros
+ * @Description: angle to ros 
+ * @Return: double 
+ * @param {double} angle
+ */
+double Lidar::angle_to_ros(bool counterclockwise_flag,double angle){
+  //clock wise 
+  if(counterclockwise_flag){
+    angle = 360.f - angle;
+  }
+  //angle change 
+  if(angle > 180.f){
+    angle -= 360.f;
+  }
+  //to rad 
+  angle = angle * M_PI / 180.f;
+
+  return angle;
+}
+
+/**
+ * @Function: lidar_raw_to_ros_format
+ * @Description: lidar rawdata to ros format data 
+ * @Return: void 
+ * @param {lidar_scan_period_t} lidar_raw
+ * @param {lidar_ros_config_t} config
+ * @param {LaserScan} &ros_scan
+ */
+void Lidar::lidar_raw_to_ros_format(lidar_scan_period_t lidar_raw, lidar_scan_ros_format_t &ros_format_scan){
+  double angle_min_radian = M_PI * (-1.f);    //angle min 
+  double angle_max_radian = M_PI;    //angle min 
+  double angle_increment = 0.f;
+  size_t points_size = lidar_raw.points.size();
+  if(points_size <= 1){
+    angle_increment = 0;
+  }else{
+    angle_increment = 2.f * M_PI / static_cast<int>(points_size);
+  }
+  ros_format_scan.angle_min = angle_min_radian;
+  ros_format_scan.angle_max = angle_max_radian;
+  ros_format_scan.range_min = 0.001;
+  ros_format_scan.range_max = 15.f;
+  ros_format_scan.speed = lidar_raw.speed;
+  ros_format_scan.intensity_flag = lidar_raw.intensity_flag;
+  ros_format_scan.timestamp_start = lidar_raw.timestamp_start;
+  ros_format_scan.timestamp_stop = lidar_raw.timestamp_stop;
+  //points and intensity
+  ros_format_scan.points.resize(points_size);
+  for(size_t index = 0; index < points_size; index++){
+    double range = 0.f;
+    double intensity = 0.f;
+    range = lidar_raw.points[index].distance / 1000.f;
+    intensity = lidar_raw.points[index].intensity;
+    //angle to ros 
+    double angle = angle_to_ros(true, lidar_raw.points[index].angle); //to [-PI ,PI] 
+    ros_format_scan.points[index].distance = range;
+    ros_format_scan.points[index].intensity = intensity;
+    ros_format_scan.points[index].angle = angle;
+    ros_format_scan.points[index].timestamp = lidar_raw.points[index].timestamp;
+  }
 }
 
 /**

@@ -59,6 +59,7 @@ class DLL_EXPORT InterfaceSerial{
                 serial_stopbits_t stopbits = StopOne,
                 serial_flowcontrol_t flowcontrol = FlowNone);          //open serial
     void serial_close();                                //close serial
+    void serial_reopen();                               //serial reopen 
     bool serial_isopen();                               //serial is open?
     int  serial_read(uint8_t *data,int max_length);     //read serial data 
     int  serial_write(const uint8_t* data,int length);  //write serial data

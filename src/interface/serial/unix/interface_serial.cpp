@@ -5,8 +5,10 @@
  */
 #include "interface/serial/interface_serial.hpp"
 #include <unistd.h>
+#include <chrono>
 #include <errno.h>   /* Error number definitions */
 #include <termios.h> /* POSIX terminal control definitions */
+#include <thread>
 #include <unistd.h>  /* UNIX standard function definitions */
 #include <fcntl.h>
 #include <err.h>
@@ -20,6 +22,13 @@ public:
   //var 
   int  _fd = -1;                    //File descriptor for the port
   bool open_flag = false;          //serial open flag
+  //serial var 
+  std::string port_name = "/dev/ttyUSB";
+  int baud_rate = 230400;
+  InterfaceSerial::serial_parity_t   parity = InterfaceSerial::ParityNone;
+  InterfaceSerial::serial_databits_t databits = InterfaceSerial::DataBits8;
+  InterfaceSerial::serial_stopbits_t stopbits = InterfaceSerial::StopOne;
+  InterfaceSerial::serial_flowcontrol_t flowcontrol = InterfaceSerial::FlowNone;
 
   // linux/include/uapi/asm-generic/termbits.h
   struct termios2 {
@@ -365,6 +374,13 @@ bool InterfaceSerial::serial_open(std::string port_name, int baud_rate,
                   serial_databits_t databits,
                   serial_stopbits_t stopbits,
                   serial_flowcontrol_t flow_control){
+  //var set value 
+  _impl->port_name = port_name;
+  _impl->baud_rate = baud_rate;
+  _impl->parity = parity;
+  _impl->databits = databits;
+  _impl->stopbits = stopbits;
+  _impl->flowcontrol = flow_control;
   //open the serial 
   _impl->_fd = open(port_name.c_str(),O_RDWR | O_NOCTTY | O_NONBLOCK);  //no block 
   //open failed
@@ -413,6 +429,22 @@ void InterfaceSerial::serial_close(){
   //close the serial 
   close(_impl->_fd);
   _impl->_fd = -1;
+}
+
+/**
+ * @Function: serial_reopen
+ * @Description: serial reopen 
+ * @Return: void 
+ */
+void InterfaceSerial::serial_reopen(){
+  //first close the serial 
+  serial_close();
+  //delay some times 
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  //reopen the serial 
+  serial_open(_impl->port_name, _impl->baud_rate,
+              _impl->parity, _impl->databits,_impl->stopbits, _impl->flowcontrol);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
 }
 
 /**

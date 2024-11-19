@@ -77,6 +77,8 @@ int main(){
 
   bool ret = false;
   nvistar::lidar_scan_period_t scan;
+  int  timeout_count = 0;
+ //nvistar::lidar_scan_ros_format_t scan_ros;
 
   _serial = new nvistar::InterfaceSerial();
   _lidar = new nvistar::Lidar();
@@ -106,33 +108,45 @@ int main(){
   //loop to get point
   while (ret && (!signal_flag)) {
     nvistar::lidar_scan_status_t status = _lidar->lidar_get_scandata(scan);
+    //_lidar->lidar_raw_to_ros_format(scan, scan_ros);
     switch(status){
       case nvistar::LIDAR_SCAN_OK:{
+        timeout_count = 0;
          _console->print_noerr("speed(RPM):%f, size:%zu, timestamp_start:%" PRIu64 ", timestamp_stop:%" PRIu64 ", timestamp_differ:%" PRIu64
-              , scan.speed, scan.points.size(), scan.timestamp_start, scan.timestamp_stop, scan.timestamp_stop-scan.timestamp_start);
+              , scan.speed, scan.points.size(), scan.timestamp_start, scan.timestamp_stop, scan.timestamp_stop - scan.timestamp_start);
         //output the points 
-        #if 0
+        #if 1
           for(size_t i = 0; i<scan.points.size(); i++){
-            _console->print_normal("angle:%.2f, distance:%.2f, intensity:%.2f, stamp:%" PRIu64 ""
+            _console->print_normal("angle:%.6f, distance:%.3f, intensity:%.2f, stamp:%" PRIu64 ""
                       ,scan.points[i].angle, scan.points[i].distance, scan.points[i].intensity, scan.points[i].timestamp);
           } 
         #endif 
         break;
       }
       case nvistar::LIDAR_SCAN_ERROR_MOTOR_LOCK: {
+        timeout_count = 0;
         _console->print_warn("lidar motor lock!");
         break;
       }
       case nvistar::LIDAR_SCAN_ERROR_MOTOR_SHORTCIRCUIT: {
+        timeout_count = 0;
         _console->print_warn("lidar motor short circuit!");
         break;
       }
       case nvistar::LIDAR_SCAN_ERROR_UP_NO_POINT: {
+        timeout_count = 0;
         _console->print_warn("lidar upboard no points!");
         break;
       }
       case nvistar::LIDAR_SCAN_TIMEOUT: {
         _console->print_warn("lidar data timeout!");
+        //reconnect 
+        timeout_count++;
+        if(timeout_count >= 10){
+          timeout_count = 0;
+          _serial->serial_reopen();
+          _console->print_noerr("lidar serial reopen!");
+        }
         break;
       }
       default:{

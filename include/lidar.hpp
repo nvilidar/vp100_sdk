@@ -19,7 +19,11 @@ namespace nvistar{
   #endif 
 #endif 
 
-#define LIDAR_SDK_VERSION   "2.0.1"
+#define LIDAR_SDK_VERSION   "2.0.2"
+
+#ifndef M_PI
+  #define M_PI 3.14159265358979323846
+#endif
 
 class LidarImpl;     //forward declaration
 
@@ -34,6 +38,20 @@ typedef enum{
   LIDAR_SCAN_ERROR_RESET,
 }lidar_scan_status_t;
 
+//ros format 
+typedef struct{
+  double    angle_min;
+  double    angle_max;
+  double    range_min;
+  double    range_max;
+  bool      intensity_flag;               //intensity?
+  double    speed;                        //RPM
+  int       error_code;                   //error code 
+  uint64_t  timestamp_start;              //stamp start 
+  uint64_t  timestamp_stop;               //stamp stop 
+  std::vector<lidar_scan_point_t> points;
+}lidar_scan_ros_format_t;
+
 class DLL_EXPORT Lidar{
   public:
     Lidar();
@@ -41,10 +59,12 @@ class DLL_EXPORT Lidar{
     void lidar_register(lidar_interface_t* interface);
     void lidar_unregister();
     lidar_scan_status_t lidar_get_scandata(lidar_scan_period_t &scan, uint32_t timeout = 2000);
+    void lidar_raw_to_ros_format(lidar_scan_period_t lidar_raw, lidar_scan_ros_format_t &ros_format_scan);
     std::string get_sdk_version();  
   private:
     LidarImpl *_impl;
     LidarProtocol *_protocol = nullptr;
+    double angle_to_ros(bool counterclockwise_flag,double angle);
 };
 
 }
