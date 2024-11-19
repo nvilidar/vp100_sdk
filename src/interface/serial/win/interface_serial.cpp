@@ -5,6 +5,8 @@
  */
 #include "interface/serial/interface_serial.hpp"
 #include <windows.h>
+#include <thread>
+#include <chrono>
 
 namespace nvistar{
 
