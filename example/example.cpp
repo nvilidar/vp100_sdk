@@ -115,7 +115,7 @@ int main(){
          _console->print_noerr("speed(RPM):%f, size:%zu, timestamp_start:%" PRIu64 ", timestamp_stop:%" PRIu64 ", timestamp_differ:%" PRIu64
               , scan.speed, scan.points.size(), scan.timestamp_start, scan.timestamp_stop, scan.timestamp_stop - scan.timestamp_start);
         //output the points 
-        #if 1
+        #if 0
           for(size_t i = 0; i<scan.points.size(); i++){
             _console->print_normal("angle:%.6f, distance:%.3f, intensity:%.2f, stamp:%" PRIu64 ""
                       ,scan.points[i].angle, scan.points[i].distance, scan.points[i].intensity, scan.points[i].timestamp);

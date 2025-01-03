@@ -5,6 +5,8 @@
  */
 #include "lidar/lidar_protocol.hpp"
 #include <atomic>
+#include <bits/stdint-uintn.h>
+#include <chrono>
 #include <thread>
 #include <iomanip>
 #include <iostream>
@@ -91,13 +93,13 @@ public:
         uint8_t   package_cmd;                  
         uint8_t   package_length;               
         uint8_t   package_data[255];            
-    }lidar_upboard_receive_buf_t;
+    }lidar_downboard_receive_buf_t;
     typedef struct{
         uint16_t  package_head;                 
         uint8_t   package_cmd;                  
         uint8_t   package_length;               
         uint8_t   package_data[255];           
-    }lidar_downboard_receive_buf_t;
+    }lidar_upboard_receive_buf_t;
     //error code
     typedef struct{
         uint16_t  package_head;               
@@ -236,9 +238,53 @@ public:
     int lidar_model_code = 0;       //lidar model code 
     lidar_boot_header_info_t  lidar_boot_header_info;                 //lidar boot info 
     double                    lidar_last_angle = 0.f;                 //lidar last angle 
+    bool lidar_boot_head_received_finished_flag = false;              //lidar receive header finished
 
     lidar_interface_t*                                  lidar_interface_function = nullptr;         //lidar interface 
     LidarProtocol::protocol_rawdata_output_callback     lidar_rawdata_output_function = nullptr;    //rawdata output function 
+
+    /**
+     * @Function: lidar_send_cmd
+     * @Description: send command to lidar
+     * @Return: bool 
+     * @param {uint8_t} cmd
+     * @param {uint8_t*} payload
+     * @param {uint8_t} length
+     */
+    bool lidar_send_cmd(uint8_t cmd, uint8_t* payload, uint8_t length){
+        uint8_t buf[255];
+        //length overload
+        if(length + 5 > 255){
+            return false;
+        }
+        //judge the interface 
+        if(lidar_interface_function == nullptr){
+            return false;
+        }
+        if(lidar_interface_function->transmit.write == nullptr){
+            return false;
+        }
+        //send 
+        if((payload == nullptr) && (length == 0)){
+            buf[0] = 0xA5;
+            buf[1] = 0x5A;
+            buf[2] = cmd;
+            buf[3] = 0x00;
+            buf[4] = acc_checksum(buf, 4);
+
+            lidar_interface_function->transmit.write(buf, 5);
+        }else{
+            buf[0] = 0xA5;
+            buf[1] = 0x5A;
+            buf[2] = cmd;
+            buf[3] = length;
+            memcpy(&buf[4], payload, length);
+            buf[length + 4] = acc_checksum(buf, length+4);
+
+            lidar_interface_function->transmit.write(buf, length+5);
+        }
+        return true;
+    }
 
     /**
     * @Function: lidar_pointcloud_data_unpack
@@ -468,7 +514,7 @@ public:
     * @param {int} pack_size
     */
     void lidar_info_unpack(lidar_receive_package_t *pack, int pack_size){
-        if((0x55 == pack->buf[0]) && (0xAA != pack->buf[0])){       //downboard 
+        if((0x55 == pack->buf[0]) && (0xAA != pack->buf[1])){       //downboard 
             //calc acc 
             uint8_t acc_value = acc_checksum(pack->buf, pack_size - 1);
             if(acc_value != pack->buf[pack_size - 1]){
@@ -543,6 +589,7 @@ public:
                     uint16_t vref_adc = (pack->downboard_info.package_data[0] + pack->downboard_info.package_data[1]*256);
                     uint16_t ir_adc = (pack->downboard_info.package_data[2] + pack->downboard_info.package_data[3]*256);
                     lidar_boot_header_info.downBoard_IRMaxVoltage = 1200*ir_adc/vref_adc;
+                    lidar_boot_head_received_finished_flag = true;      //lidar received all head 
                     break;
                 }
                 default:{
@@ -976,7 +1023,7 @@ public:
     uint8_t acc_checksum(const uint8_t *data, int length){
         uint8_t check_sum_value = 0;
 
-        for (uint16_t i = 0; i < length; i++) {
+        for (int i = 0; i < length; i++) {
             check_sum_value += data[i];
         }
         return check_sum_value;
@@ -1070,7 +1117,7 @@ void LidarProtocol::lidar_protocol_register(lidar_interface_t* api, protocol_raw
   _impl->thread_finished_flag.store(false);
   _impl->thread_running_flag.store(true);
 
-  std::this_thread::sleep_for(std::chrono::microseconds(10));
+  std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
   //open thread 
   std::thread readThread([this]() {
@@ -1082,14 +1129,10 @@ void LidarProtocol::lidar_protocol_register(lidar_interface_t* api, protocol_raw
                   _impl->lidar_pointcloud_data_unpack(_impl->lidar_transmit_received_data.buf, _impl->lidar_transmit_received_data.length); 
               }
           }
-          //delay  
-        #if defined(_WIN32)
-           Sleep(1);
-        #else 
-           usleep(1000);
-        #endif 
+          //delay 
+          std::this_thread::sleep_for(std::chrono::milliseconds(2)); 
       }
-      std::this_thread::sleep_for(std::chrono::microseconds(100));
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
       _impl->thread_finished_flag.store(true);
   });
   readThread.detach();
@@ -1104,9 +1147,64 @@ void LidarProtocol::lidar_protocol_unregister(){
     //close the threand
     _impl->thread_running_flag.store(false);
     while (!_impl->thread_finished_flag.load()) {
-       std::this_thread::sleep_for(std::chrono::microseconds(10));
+       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    std::this_thread::sleep_for(std::chrono::microseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+}
+
+/**
+ * @Function: lidar_protocol_stop_scan
+ * @Description: lidar stop scan and stop motor
+ * @Return: bool 
+ */
+bool LidarProtocol::lidar_protocol_stop_scan(){
+    return _impl->lidar_send_cmd(0x02, nullptr, 0);
+}
+
+/**
+ * @Function: lidar_protocol_start_scan
+ * @Description: lidar start scan and start motor
+ * @Return: bool 
+ */
+bool LidarProtocol::lidar_protocol_start_scan(){
+    return _impl->lidar_send_cmd(0x01, nullptr, 0);
+}
+
+/**
+ * @Function: lidar_protocol_reset
+ * @Description: reset lidar 
+ * @Return: bool 
+ */
+bool LidarProtocol::lidar_protocol_reset(){
+    return _impl->lidar_send_cmd(0x03, nullptr, 0);
+}
+
+/**
+ * @Function: lidar_protocol_get_model
+ * @Description: lidar get head model
+ * @Return: 
+ * @param {string} &model
+ */
+bool LidarProtocol::lidar_protocol_get_model(std::string &model){
+    if(false == _impl->lidar_boot_head_received_finished_flag){
+        return false;
+    }
+    model = _impl->lidar_boot_header_info.upBoard_Model;
+    return true;
+}
+
+/**
+ * @Function: lidar_protocol_get_soft_version
+ * @Description: lidar get head version`
+ * @Return: bool
+ * @param {string} &version
+ */
+bool LidarProtocol::lidar_protocol_get_soft_version(std::string &version){
+    if(false == _impl->lidar_boot_head_received_finished_flag){
+        return false;
+    }
+    version = _impl->lidar_boot_header_info.downBoard_SoftVersion;
+    return true;
 }
 
 }

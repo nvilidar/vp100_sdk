@@ -79,7 +79,12 @@ class DLL_EXPORT LidarProtocol{
     LidarProtocol();
     ~LidarProtocol();
     void lidar_protocol_register(lidar_interface_t* api, protocol_rawdata_output_callback rawdata_output); //register communitcation api 
-    void lidar_protocol_unregister();                                   //unregister 
+    void lidar_protocol_unregister();                               //unregister 
+    bool lidar_protocol_stop_scan();                                //stop motor and scan 
+    bool lidar_protocol_start_scan();                               //start motor and scan 
+    bool lidar_protocol_reset();                                    //reset the lidar 
+    bool lidar_protocol_get_model(std::string &model);              //get the lidar model(send at startup, so you neet send reset and get the para)
+    bool lidar_protocol_get_soft_version(std::string &version);     //get the lidar software version(send at startup, so you neet send reset and get the para)
   private:
     LidarProtocolImpl* _impl;  //pimpl function
 };

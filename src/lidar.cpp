@@ -83,6 +83,53 @@ void Lidar::lidar_unregister(){
 }
 
 /**
+ * @Function: lidar_stop_scan
+ * @Description: lidar stop scan 
+ * @Return: bool 
+ */
+bool Lidar::lidar_stop_scan(){
+  return _protocol->lidar_protocol_stop_scan();
+}
+
+/**
+ * @Function: lidar_start_scan
+ * @Description: lidar start scan
+ * @Return: bool 
+ */
+bool Lidar::lidar_start_scan(){
+  return _protocol->lidar_protocol_start_scan();
+}
+
+/**
+ * @Function: lidar_reset
+ * @Description: lidar reset
+ * @Return: bool 
+ */
+bool Lidar::lidar_reset(){
+  return _protocol->lidar_protocol_reset();
+}
+
+/**
+ * @Function: lidar_get_model
+ * @Description: lidar get model 
+ * @Return: bool 
+ * @param {string} &model
+ */
+bool Lidar::lidar_get_model(std::string &model){
+  return _protocol->lidar_protocol_get_model(model);
+}
+
+/**
+ * @Function: lidar_get_soft_version
+ * @Description: lidar get software version 
+ * @Return: bool 
+ * @param {string} &version
+ */
+bool Lidar::lidar_get_soft_version(std::string &version){
+  return _protocol->lidar_protocol_get_soft_version(version);
+}
+
+/**
  * @Function: angle_to_ros
  * @Description: angle to ros 
  * @Return: double 
