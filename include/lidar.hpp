@@ -8,6 +8,7 @@
 #define __LIDAR_H__
 
 #include "lidar/lidar_protocol.hpp"
+#include <string>
 
 namespace nvistar{
 
