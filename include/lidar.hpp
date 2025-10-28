@@ -20,7 +20,7 @@ namespace nvistar{
   #endif 
 #endif 
 
-#define LIDAR_SDK_VERSION   "2.0.3"
+#define LIDAR_SDK_VERSION   "2.0.4"
 
 #ifndef M_PI
   #define M_PI 3.14159265358979323846
@@ -57,13 +57,14 @@ class DLL_EXPORT Lidar{
   public:
     Lidar();
     ~Lidar();
-    void lidar_register(lidar_interface_t* interface);
+    void lidar_register(lidar_interface_t* interface, bool protocol_070c_raw_flag = false);
     void lidar_unregister();
     bool lidar_stop_scan();
     bool lidar_start_scan();
     bool lidar_reset();
     bool lidar_get_model(std::string &model);
-    bool lidar_get_soft_version(std::string &version);
+    bool lidar_get_down_soft_version(std::string &version);
+    bool lidar_get_up_soft_version(std::string &version);
     lidar_scan_status_t lidar_get_scandata(lidar_scan_period_t &scan, uint32_t timeout = 2000);
     void lidar_raw_to_ros_format(lidar_scan_period_t lidar_raw, lidar_scan_ros_format_t &ros_format_scan);
     std::string get_sdk_version();  

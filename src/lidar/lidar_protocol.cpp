@@ -13,6 +13,8 @@
 #include <sstream>
 #include <cstring>
 #include <mutex>
+
+#include "lidar.hpp"
 #if defined(_WIN32)
     #include <windows.h>
 #else 
@@ -27,7 +29,9 @@ public:
     #define NORMAL_NO_QUALITY_PACK_MAX_POINTS         8            //normal protocol no quality pack points
     #define NORMAL_HAS_QUALITY_PACK_MAX_POINTS        8            //normal protocol has quality pack points
     #define YW_HAS_QUALITY_PACK_MAX_POINTS            12           //yw protocol has quality pack points
-    #define LD_HAS_QUALITY_PACK_MAX_POINTS            12           //ld protocol has quality pack points 
+    #define YW_HAS_QUALITY_WITH_RAW_PACK_MAX_POINTS   12           //yw protocol has quality and raw distance pack points
+    #define LD_HAS_QUALITY_PACK_MAX_POINTS            12           //ld protocol has quality pack points
+    #define TM21_HAS_QUALITY_PACK_MAX_POINTS          12           //tm21 protocol has quality pack points
     #define ROBOROCK_HAS_QUALITY_PACK_MAX_POINTS      4            //roborock has quality pack points
 
     #define LIDAR_TRANSMIT_RECEIVED_BUF               1024         //lidar transmit buffer
@@ -161,6 +165,24 @@ public:
         uint16_t  package_checksum;             
     }lidar_yw_has_quality_package_t;
 
+    //===================yw protocol has quality with raw
+    typedef struct{
+        uint16_t  distance;
+        uint16_t  quality;
+        uint16_t  distance_raw;
+    }lidar_yw_has_quality_with_raw_point_t;
+
+    typedef struct{
+        uint16_t  package_head;
+        uint8_t   package_information;
+        uint8_t   package_point_count;
+        uint16_t  package_speed;
+        uint16_t  package_first_angle;
+        lidar_yw_has_quality_with_raw_point_t points[YW_HAS_QUALITY_WITH_RAW_PACK_MAX_POINTS];
+        uint16_t  package_last_angle;
+        uint16_t  package_checksum;
+    }lidar_yw_has_quality_with_raw_package_t;
+
     //===================ld protocol has quality
     typedef struct{
         uint16_t  distance;
@@ -177,28 +199,32 @@ public:
         uint8_t   package_checksum;             
     }lidar_ld_has_quality_package_t;
 
-    //===================ld protocol has quality
+    //===================tm21 protocol has quality
     typedef struct{
-        uint16_t  distance;
-        uint16_t  quality;
-    }lidar_roborock_has_quality_point_t;
+        uint16_t distance;
+        uint8_t  quality;
+    }lidar_tm21_has_quality_point_t;
 
     typedef struct{
-        uint16_t  package_head;                                 
-        uint16_t  package_index;                
-        uint16_t  package_speed;     
-        lidar_roborock_has_quality_point_t points[ROBOROCK_HAS_QUALITY_PACK_MAX_POINTS];     
-        uint16_t  package_checksum;             
-    }lidar_roborock_has_quality_package_t;
+        uint16_t  package_head;
+        uint8_t   package_information;
+        uint8_t   package_point_count;
+        uint16_t  package_speed;
+        uint16_t  package_first_angle;
+        lidar_tm21_has_quality_point_t points[TM21_HAS_QUALITY_PACK_MAX_POINTS];
+        uint16_t  package_last_angle;
+        uint16_t  package_checksum;
+    }lidar_tm21_has_quality_package_t;
 
 
     //all protocol union 
     typedef union {
         lidar_normal_no_quality_package_t               normal_no_quality;       
         lidar_normal_has_quality_package_t              normal_has_quality;  
-        lidar_yw_has_quality_package_t                  yw_has_quality;       
-        lidar_ld_has_quality_package_t                  ld_has_quality;          
-        lidar_roborock_has_quality_package_t            roborock_quality;   
+        lidar_yw_has_quality_package_t                  yw_has_quality;
+        lidar_yw_has_quality_with_raw_package_t         yw_has_quality_with_raw;
+        lidar_ld_has_quality_package_t                  ld_has_quality;
+        lidar_tm21_has_quality_package_t                tm21_has_quality;
         lidar_upboard_receive_buf_t                     upboard_info;     
         lidar_downboard_receive_buf_t                   downboard_info;   
         lidar_errorcode_package_t                       error_code;  
@@ -206,15 +232,17 @@ public:
     }lidar_receive_package_t;
 
 
-    #define GET_LIDAR_DATA_SIZE(model) \
-    (   \
+    #define GET_LIDAR_DATA_SIZE(model, with_raw) \
+    (       \
         (model == LidarProtocol::PROTOCOL_MODEL_NORMAL_NO_QUALITY) ? sizeof(lidar_normal_no_quality_package_t) : \
         (model == LidarProtocol::PROTOCOL_MODEL_NORMAL_HAS_QUALITY) ? sizeof(lidar_normal_has_quality_package_t) : \
-        (model == LidarProtocol::PROTOCOL_MODEL_YW_HAS_QUALITY) ? sizeof(lidar_yw_has_quality_package_t) : \
+        (model == LidarProtocol::PROTOCOL_MODEL_YW_HAS_QUALITY) ? ( \
+                (with_raw) ? sizeof(lidar_yw_has_quality_with_raw_package_t) : sizeof(lidar_yw_has_quality_package_t) \
+                ) : \
         (model == LidarProtocol::PROTOCOL_MODEL_LD_HAS_QUAILIY) ? sizeof(lidar_ld_has_quality_package_t) : \
-        (model == LidarProtocol::PROTOCOL_MODEL_ROBOROCK_HAS_QUALITY) ? sizeof(lidar_roborock_has_quality_package_t) : \
+        (model == LidarProtocol::PROTOCOL_MODEL_TM21_HAS_QUAILIY) ? sizeof(lidar_tm21_has_quality_package_t) : \
         (model == LidarProtocol::PROTOCOL_MODEL_ERROR_FAULT) ? sizeof(lidar_errorcode_package_t) : \
-        0 \
+        0   \
     )
     
     //lidar data transmit
@@ -239,6 +267,7 @@ public:
     lidar_boot_header_info_t  lidar_boot_header_info;                 //lidar boot info 
     double                    lidar_last_angle = 0.f;                 //lidar last angle 
     bool lidar_boot_head_received_finished_flag = false;              //lidar receive header finished
+    bool protocol_070c_with_raw_flag = false;                         //07 0c protocol has raw?
 
     lidar_interface_t*                                  lidar_interface_function = nullptr;         //lidar interface 
     LidarProtocol::protocol_rawdata_output_callback     lidar_rawdata_output_function = nullptr;    //rawdata output function 
@@ -314,9 +343,6 @@ public:
                     }else if(0x54 == cur_byte){
                         lidar_receive_package.buf[received_pos] = cur_byte;
                         received_pos++;
-                    }else if(0xFA == cur_byte){
-                        lidar_receive_package.buf[received_pos] = cur_byte;
-                        received_pos++;
                     }else{
                         received_pos = 0;
                     }
@@ -340,14 +366,7 @@ public:
                         }else{
                             received_pos = 0;
                         }
-                    }else if(0xFA == lidar_receive_package.buf[0]){     //FA A0
-                        if((cur_byte >= 0xA0) && (cur_byte) <= 0xF9){
-                            lidar_receive_package.buf[received_pos] = cur_byte;
-                            received_pos++;
-                        }else{
-                            received_pos = 0;
-                        }
-                    }else if(0xA5 == lidar_receive_package.buf[0]){     //A5 AB    
+                    }else if(0xA5 == lidar_receive_package.buf[0]){     //A5 AB
                         if(0xAB == cur_byte){        
                             lidar_receive_package.buf[received_pos] = cur_byte;
                             received_pos++;
@@ -379,6 +398,7 @@ public:
                         if( (((LidarProtocol::PROTOCOL_MODEL_NORMAL_NO_QUALITY >> 8)& 0xFF) == cur_byte) ||
                             (((LidarProtocol::PROTOCOL_MODEL_NORMAL_HAS_QUALITY >> 8)& 0xFF) == cur_byte) ||
                             (((LidarProtocol::PROTOCOL_MODEL_YW_HAS_QUALITY >> 8)& 0xFF) == cur_byte) ||
+                            (((LidarProtocol::PROTOCOL_MODEL_TM21_HAS_QUAILIY >> 8)& 0xFF) == cur_byte) ||
                             (((LidarProtocol::PROTOCOL_MODEL_ERROR_FAULT >> 8)& 0xFF) == cur_byte)   ){
                             lidar_model_code = (int)(cur_byte << 8);
                             lidar_receive_package.buf[received_pos] = cur_byte;
@@ -387,9 +407,6 @@ public:
                             received_pos = 0;
                         }
                     }else if((0x54 == lidar_receive_package.buf[0]) && (0x2C == lidar_receive_package.buf[1])){    //0x54 0x2C pointcloud_ld
-                        lidar_receive_package.buf[received_pos] = cur_byte;
-                        received_pos++;
-                    }else if(0xFA == lidar_receive_package.buf[0]){    //0xFA 0xXX   pointcloud_roborock
                         lidar_receive_package.buf[received_pos] = cur_byte;
                         received_pos++;
                     }else{
@@ -413,9 +430,10 @@ public:
                         if( ((LidarProtocol::PROTOCOL_MODEL_NORMAL_NO_QUALITY & 0xFF) == cur_byte) ||
                             ((LidarProtocol::PROTOCOL_MODEL_NORMAL_HAS_QUALITY & 0xFF) == cur_byte) ||
                             ((LidarProtocol::PROTOCOL_MODEL_YW_HAS_QUALITY & 0xFF) == cur_byte) ||
+                            ((LidarProtocol::PROTOCOL_MODEL_TM21_HAS_QUAILIY & 0xFF) == cur_byte) ||
                             ((LidarProtocol::PROTOCOL_MODEL_ERROR_FAULT & 0xFF) == cur_byte)){
                             lidar_model_code |= cur_byte;
-                            received_package_size = GET_LIDAR_DATA_SIZE(lidar_model_code);
+                            received_package_size = GET_LIDAR_DATA_SIZE(lidar_model_code, protocol_070c_with_raw_flag);
                             lidar_receive_package.buf[received_pos] = cur_byte;
                             received_pos++;
                         }else{
@@ -423,12 +441,7 @@ public:
                         }
                     }else if((0x54 == lidar_receive_package.buf[0]) && (0x2C == lidar_receive_package.buf[1])){   //0x54 0x2C pointcloud_ld
                         lidar_model_code = LidarProtocol::PROTOCOL_MODEL_LD_HAS_QUAILIY;
-                        received_package_size = GET_LIDAR_DATA_SIZE(lidar_model_code);
-                        lidar_receive_package.buf[received_pos] = cur_byte;
-                        received_pos++;
-                    }else if(0xFA == lidar_receive_package.buf[0]){    //0xFA 0xXX   pointcloud_roborock
-                        lidar_model_code = LidarProtocol::PROTOCOL_MODEL_ROBOROCK_HAS_QUALITY;
-                        received_package_size = GET_LIDAR_DATA_SIZE(lidar_model_code);
+                        received_package_size = GET_LIDAR_DATA_SIZE(lidar_model_code, protocol_070c_with_raw_flag);
                         lidar_receive_package.buf[received_pos] = cur_byte;
                         received_pos++;
                     }else{
@@ -458,7 +471,15 @@ public:
                                     break;
                                 }
                                 case LidarProtocol::PROTOCOL_MODEL_YW_HAS_QUALITY:{
-                                    lidar_pointcloud_yw_has_quality_unpack(&lidar_receive_package);
+                                    if (protocol_070c_with_raw_flag){
+                                        lidar_pointcloud_yw_has_quality_with_raw_unpack(&lidar_receive_package);
+                                    }else{
+                                        lidar_pointcloud_yw_has_quality_unpack(&lidar_receive_package);
+                                    }
+                                    break;
+                                }
+                                case LidarProtocol::PROTOCOL_MODEL_TM21_HAS_QUAILIY:{
+                                    lidar_pointcloud_tm21_has_quality_unpack(&lidar_receive_package);
                                     break;
                                 }
                                 case LidarProtocol::PROTOCOL_MODEL_ERROR_FAULT:{
@@ -473,16 +494,6 @@ public:
                             switch(lidar_model_code){
                                 case LidarProtocol::PROTOCOL_MODEL_LD_HAS_QUAILIY:{
                                     lidar_pointcloud_ld_has_quality_unpack(&lidar_receive_package);
-                                    break;
-                                }
-                                default:{
-                                    break;
-                                }
-                            }
-                        }else if((0xFA == lidar_receive_package.buf[0]) && (lidar_receive_package.buf[1] >= 0xA0) && (lidar_receive_package.buf[1] <= 0xF9)){  //0xFA 0xXX 石头协议
-                            switch(lidar_model_code){
-                                case LidarProtocol::PROTOCOL_MODEL_ROBOROCK_HAS_QUALITY:{
-                                    lidar_pointcloud_roborock_has_quality_unpack(&lidar_receive_package);
                                     break;
                                 }
                                 default:{
@@ -688,6 +699,8 @@ public:
             }else {
                 point_raw_single.distance = static_cast<double>(cur_distance_u16);
             }
+            //distance raw
+            point_raw_single.distance_raw = 0;
             //quality
             point_raw_single.intensity = 0;
             //add cache 
@@ -755,6 +768,8 @@ public:
             }else {
                 point_raw_single.distance = static_cast<double>(cur_distance_u16);
             }
+            //distance raw
+            point_raw_single.distance_raw = 0;
             //quality
             point_raw_single.intensity = static_cast<double>(pack->normal_has_quality.points[j].quality);
             //add cache 
@@ -821,6 +836,8 @@ public:
             }else {
                 point_raw_single.distance = static_cast<double>(cur_distance_u16);
             }
+            //distance raw
+            point_raw_single.distance_raw = 0;
             //quality
             point_raw_single.intensity = static_cast<double>(pack->yw_has_quality.points[j].quality);
             //add cache 
@@ -853,6 +870,75 @@ public:
     }
 
     /**
+    * @Function: lidar_pointcloud_yw_has_quality_with_raw_unpack
+    * @Description: yw has quality with raw distance
+    * @Return: void
+    * @param {lidar_receive_package_t} *pack
+    */
+    void lidar_pointcloud_yw_has_quality_with_raw_unpack(lidar_receive_package_t *pack){
+        //crc
+        uint16_t crc_get = pack->yw_has_quality_with_raw.package_checksum;
+        uint16_t crc_calc = crc16_checksum(pack->buf, sizeof(lidar_yw_has_quality_with_raw_package_t)-2);
+        if(crc_calc != crc_get){
+            return;
+        }
+        //calc angle
+        double angle_differ = 0.0;
+        uint16_t first_angle = pack->yw_has_quality_with_raw.package_first_angle - 0xA000;
+        uint16_t last_angle =  pack->yw_has_quality_with_raw.package_last_angle - 0xA000;
+        if(last_angle >= first_angle){      //start angle > end angle
+            angle_differ = (static_cast<double>(last_angle - first_angle)/static_cast<double>(YW_HAS_QUALITY_WITH_RAW_PACK_MAX_POINTS - 1))/64.0;
+        }else {
+            angle_differ = (static_cast<double>(last_angle + (360*64) - first_angle)/static_cast<double>(YW_HAS_QUALITY_WITH_RAW_PACK_MAX_POINTS - 1))/64.0;
+        }
+        double first_angle_true = static_cast<double>(first_angle)/64.0;
+        //calc points info
+        for(int j = 0; j<YW_HAS_QUALITY_WITH_RAW_PACK_MAX_POINTS; j++){
+            lidar_scan_point_t  point_raw_single;
+            //point angle
+            point_raw_single.angle = first_angle_true + angle_differ*j;
+            if(point_raw_single.angle >= 360.0){
+                point_raw_single.angle -= 360.0;
+            }
+            //point distance
+            uint16_t cur_distance_u16 = pack->yw_has_quality_with_raw.points[j].distance;
+            if((cur_distance_u16 & 0x8000) != 0){
+                point_raw_single.distance = 0;
+            }else {
+                point_raw_single.distance = static_cast<double>(cur_distance_u16);
+            }
+            //distance raw
+            point_raw_single.distance_raw = pack->yw_has_quality_with_raw.points[j].distance_raw;
+            //quality
+            point_raw_single.intensity = static_cast<double>(pack->yw_has_quality_with_raw.points[j].quality);
+            //add cache
+            lidar_points_cache.push_back(point_raw_single);
+            //check is period
+            if(point_raw_single.angle < lidar_last_angle){
+                //mutex
+                std::lock_guard<std::mutex> lock(lidar_mtx);
+                //update
+                lidar_point_raw_period_cache.intensity_flag = false;
+                lidar_point_raw_period_cache.speed = static_cast<double>(pack->yw_has_quality_with_raw.package_speed)/64.f;
+                lidar_point_raw_period_cache.model_code = LidarProtocol::PROTOCOL_MODEL_YW_HAS_QUALITY;
+                lidar_point_raw_period_cache.error_code = LidarProtocol::ERROR_CODE_NONE;
+                lidar_point_raw_period_cache.points =  lidar_points_cache;
+                if(lidar_interface_function->get_timestamp != nullptr){
+                    lidar_point_raw_period_cache.timestamp_start = lidar_point_raw_period_cache.timestamp_stop;
+                    lidar_point_raw_period_cache.timestamp_stop = lidar_interface_function->get_timestamp();
+                }
+                if(lidar_rawdata_output_function != nullptr){
+                    lidar_rawdata_output_function(lidar_point_raw_period_cache);
+                }
+
+                lidar_points_cache.clear();
+            }
+            lidar_last_angle = point_raw_single.angle;
+        }
+    }
+
+
+    /**
     * @Function: lidar_pointcloud_ld_has_quality_unpack
     * @Description: ld has quality 
     * @Return: void 
@@ -883,6 +969,8 @@ public:
             if(point_raw_single.angle >= 360.0){
                 point_raw_single.angle -= 360.0;
             }
+            //distance raw
+            point_raw_single.distance_raw = 0;
             //point distance
             uint16_t cur_distance_u16 = pack->ld_has_quality.points[j].distance;
             if((cur_distance_u16 & 0x8000) != 0){
@@ -920,53 +1008,59 @@ public:
     }
 
     /**
-    * @Function: lidar_pointcloud_roborock_has_quality_unpack
-    * @Description: roborock protocol 
+    * @Function: lidar_pointcloud_tm21_has_quality_unpack
+    * @Description: tim21 has quality
     * @Return: void
     * @param {lidar_receive_package_t} *pack
     */
-    void lidar_pointcloud_roborock_has_quality_unpack(lidar_receive_package_t *pack){
+    void lidar_pointcloud_tm21_has_quality_unpack(lidar_receive_package_t *pack){
         //crc
-        uint16_t crc_get = pack->roborock_quality.package_checksum;
-        uint16_t crc_calc = crc16_checksum(pack->buf, sizeof(lidar_roborock_has_quality_package_t)-2);
+        uint16_t crc_get = pack->tm21_has_quality.package_checksum;
+        uint16_t crc_calc = crc16_checksum(pack->buf, sizeof(lidar_tm21_has_quality_package_t)-2);
         if(crc_calc != crc_get){
             return;
         }
-        //calc angle 
+        //calc angle
         double angle_differ = 0.0;
-        uint16_t first_angle = (pack->roborock_quality.package_index - 0xA0) * 4;
-        //uint16_t last_angle =  (pack->roborock_quality.package_index - 0xA0) * 4 + 3;
-        angle_differ = 1.f;
-        double first_angle_true = static_cast<double>(first_angle);
-        //calc points info 
-        for(int j = 0; j<ROBOROCK_HAS_QUALITY_PACK_MAX_POINTS; j++){
+        uint16_t first_angle = pack->tm21_has_quality.package_first_angle - 0xA000;
+        uint16_t last_angle =  pack->tm21_has_quality.package_last_angle - 0xA000;
+        if(last_angle >= first_angle){      //start angle > end angle
+            angle_differ = (static_cast<double>(last_angle - first_angle)/static_cast<double>(TM21_HAS_QUALITY_PACK_MAX_POINTS - 1))/64.0;
+        }else {
+            angle_differ = (static_cast<double>(last_angle + (360*64) - first_angle)/static_cast<double>(TM21_HAS_QUALITY_PACK_MAX_POINTS - 1))/64.0;
+        }
+        double first_angle_true = static_cast<double>(first_angle)/64.0;
+        //calc points info
+        for(int j = 0; j<TM21_HAS_QUALITY_PACK_MAX_POINTS; j++){
             lidar_scan_point_t  point_raw_single;
-            //point angle 
+            //point angle
             point_raw_single.angle = first_angle_true + angle_differ*j;
             if(point_raw_single.angle >= 360.0){
                 point_raw_single.angle -= 360.0;
             }
             //point distance
-            uint16_t cur_distance_u16 = pack->roborock_quality.points[j].distance;
+            uint16_t cur_distance_u16 = pack->tm21_has_quality.points[j].distance;
             if((cur_distance_u16 & 0x8000) != 0){
                 point_raw_single.distance = 0;
             }else {
                 point_raw_single.distance = static_cast<double>(cur_distance_u16);
             }
+            //distance raw
+            point_raw_single.distance_raw = 0;
             //quality
-            point_raw_single.intensity = static_cast<double>(pack->roborock_quality.points[j].quality);
-            //add cache 
+            point_raw_single.intensity = static_cast<double>(pack->tm21_has_quality.points[j].quality);
+            //add cache
             lidar_points_cache.push_back(point_raw_single);
             //check is period
             if(point_raw_single.angle < lidar_last_angle){
                 //mutex
                 std::lock_guard<std::mutex> lock(lidar_mtx);
-                //update 
-                lidar_point_raw_period_cache.intensity_flag = true;
-                lidar_point_raw_period_cache.speed = static_cast<double>(pack->roborock_quality.package_speed) / 64.f;
-                lidar_point_raw_period_cache.model_code = LidarProtocol::PROTOCOL_MODEL_ROBOROCK_HAS_QUALITY;
+                //update
+                lidar_point_raw_period_cache.intensity_flag = false;
+                lidar_point_raw_period_cache.speed = static_cast<double>(pack->tm21_has_quality.package_speed)/64.f;
+                lidar_point_raw_period_cache.model_code = LidarProtocol::PROTOCOL_MODEL_TM21_HAS_QUAILIY;
                 lidar_point_raw_period_cache.error_code = LidarProtocol::ERROR_CODE_NONE;
-                lidar_point_raw_period_cache.points =  lidar_points_cache;
+                lidar_point_raw_period_cache.points = lidar_points_cache;
                 if(lidar_interface_function->get_timestamp != nullptr){
                     lidar_point_raw_period_cache.timestamp_start = lidar_point_raw_period_cache.timestamp_stop;
                     lidar_point_raw_period_cache.timestamp_stop = lidar_interface_function->get_timestamp();
@@ -975,7 +1069,6 @@ public:
                 if(lidar_rawdata_output_function != nullptr){
                     lidar_rawdata_output_function(lidar_point_raw_period_cache);
                 }
-
                 lidar_points_cache.clear();
             }
             lidar_last_angle = point_raw_single.angle;
@@ -998,8 +1091,8 @@ public:
         }
         //get errorcode
         lidar_point_raw_period_cache.intensity_flag = false;
-        lidar_point_raw_period_cache.speed = static_cast<double>(pack->roborock_quality.package_speed) / 64.f;
-        lidar_point_raw_period_cache.model_code = LidarProtocol::PROTOCOL_MODEL_ROBOROCK_HAS_QUALITY;
+        lidar_point_raw_period_cache.speed = 0;
+        lidar_point_raw_period_cache.model_code = LidarProtocol::PROTOCOL_MODEL_ERROR_FAULT;
         lidar_point_raw_period_cache.error_code = pack->error_code.package_errorcode;
         lidar_point_raw_period_cache.points.clear();
         if(lidar_interface_function->get_timestamp != nullptr){
@@ -1037,29 +1130,18 @@ public:
     * @param {int} length
     */
     uint16_t crc16_checksum(const uint8_t *data, int length){
-        uint32_t temp_crc_value = 0;
-        uint32_t crc_value = 0;
-
         if (length % 2 != 0) {
             return 0;
         }
-        for (int i = 0; i < length/2; i++) {
-            uint16_t temp_u16;
-            uint16_t temp_u16_high = 0;
-            uint16_t temp_u16_low = 0;
+        uint32_t temp_crc_value = 0;
+        const uint16_t *words = (const uint16_t *)data;
+        int word_count = length / 2;
 
-            temp_u16_high = data[i * 2 + 1];
-            temp_u16_high <<= 8;
-            temp_u16_low = data[2 * i];
-
-            temp_u16 = temp_u16_high | temp_u16_low;
-
-            temp_crc_value = (temp_crc_value << 1) + temp_u16;
+        for (int i = 0; i < word_count; i++) {
+            temp_crc_value = (temp_crc_value << 1) + words[i];
         }
-        crc_value = (temp_crc_value & 0x7FFF) + (temp_crc_value >> 15);
-        crc_value = crc_value & 0x7FFF;
-
-        return crc_value;
+        temp_crc_value = (temp_crc_value & 0x7FFF) + (temp_crc_value >> 15);
+        return temp_crc_value & 0x7FFF;
     }
 
     /**
@@ -1109,10 +1191,11 @@ LidarProtocol::~LidarProtocol(){
  * @param {lidar_interface_t*} api
  * @param {protocol_rawdata_output_callback} rawdata_output
  */
-void LidarProtocol::lidar_protocol_register(lidar_interface_t* api, protocol_rawdata_output_callback rawdata_output){
+void LidarProtocol::lidar_protocol_register(lidar_interface_t* api, protocol_rawdata_output_callback rawdata_output, bool protocol_070c_raw_flag){
   //register the io function 
   _impl->lidar_interface_function = api;
   _impl->lidar_rawdata_output_function = rawdata_output;
+  _impl->protocol_070c_with_raw_flag = protocol_070c_raw_flag;
 
   _impl->thread_finished_flag.store(false);
   _impl->thread_running_flag.store(true);
@@ -1194,16 +1277,30 @@ bool LidarProtocol::lidar_protocol_get_model(std::string &model){
 }
 
 /**
- * @Function: lidar_protocol_get_soft_version
- * @Description: lidar get head version`
+ * @Function: lidar_protocol_get_down_soft_version
+ * @Description: lidar get down head version`
  * @Return: bool
  * @param {string} &version
  */
-bool LidarProtocol::lidar_protocol_get_soft_version(std::string &version){
+bool LidarProtocol::lidar_protocol_get_down_soft_version(std::string &version){
     if(false == _impl->lidar_boot_head_received_finished_flag){
         return false;
     }
     version = _impl->lidar_boot_header_info.downBoard_SoftVersion;
+    return true;
+}
+
+    /**
+ * @Function: lidar_protocol_get_up_soft_version
+ * @Description: lidar get up head version`
+ * @Return: bool
+ * @param {string} &version
+ */
+bool LidarProtocol::lidar_protocol_get_up_soft_version(std::string &version){
+    if(false == _impl->lidar_boot_head_received_finished_flag){
+        return false;
+    }
+    version = _impl->lidar_boot_header_info.upBoard_SoftVersion;
     return true;
 }
 

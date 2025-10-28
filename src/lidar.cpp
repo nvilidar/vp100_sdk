@@ -47,7 +47,7 @@ std::string Lidar::get_sdk_version(){
  * @Return: void
  * @param {lidar_interface_t*} interface
  */
-void Lidar::lidar_register(lidar_interface_t* interface){
+void Lidar::lidar_register(lidar_interface_t* interface, bool protocol_070c_raw_flag){
   //callback function 
   auto pointcloud_callback = [this](lidar_scan_period_t rawdata_output){
     //read finish, then enable to read next package 
@@ -70,7 +70,7 @@ void Lidar::lidar_register(lidar_interface_t* interface){
       }
     }
   };
-  _protocol->lidar_protocol_register(interface, pointcloud_callback);
+  _protocol->lidar_protocol_register(interface, pointcloud_callback, protocol_070c_raw_flag);
 }
 
 /**
@@ -120,14 +120,25 @@ bool Lidar::lidar_get_model(std::string &model){
 }
 
 /**
- * @Function: lidar_get_soft_version
- * @Description: lidar get software version 
+ * @Function: lidar_get_down_soft_version
+ * @Description: lidar get down software version
  * @Return: bool 
  * @param {string} &version
  */
-bool Lidar::lidar_get_soft_version(std::string &version){
-  return _protocol->lidar_protocol_get_soft_version(version);
+bool Lidar::lidar_get_down_soft_version(std::string &version){
+  return _protocol->lidar_protocol_get_down_soft_version(version);
 }
+
+/**
+ * @Function: lidar_get_up_soft_version
+ * @Description: lidar get down software version
+ * @Return: bool
+ * @param {string} &version
+ */
+bool Lidar::lidar_get_up_soft_version(std::string &version){
+  return _protocol->lidar_protocol_get_up_soft_version(version);
+}
+
 
 /**
  * @Function: angle_to_ros

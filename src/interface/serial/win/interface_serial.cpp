@@ -210,6 +210,13 @@ bool InterfaceSerial::serial_open(std::string port_name, int baud_rate,
   std::wstring port_name_wstring(port_name.begin(), port_name.end());
   std::wstring port_name_open = L"\\\\.\\" + port_name_wstring;
   LPCWSTR port_name_lp = port_name_open.c_str();
+  //save parameters
+  _impl->port_name = port_name;
+  _impl->baud_rate = baud_rate;
+  _impl->parity = parity;
+  _impl->databits = databits;
+  _impl->stopbits = stopbits;
+  _impl->flowcontrol = flow_control;
   //open the serial 
   _impl->_fd = CreateFileW(port_name_lp,                   //communication port string (COMX)
                         GENERIC_READ | GENERIC_WRITE,   //read/write types
@@ -236,6 +243,8 @@ bool InterfaceSerial::serial_open(std::string port_name, int baud_rate,
   // activate settings
   if (!SetCommState(_impl->_fd, &cfg)){
     CloseHandle(_impl->_fd);
+    _impl->_fd = INVALID_HANDLE_VALUE;
+    return false;
   }
   //discards all characters from the output or input buffer of a specified communications resource. It
   //can also terminate pending read or write operations on the resource.
@@ -249,6 +258,7 @@ bool InterfaceSerial::serial_open(std::string port_name, int baud_rate,
   cfg_timeout.WriteTotalTimeoutMultiplier = 0;
   if(!SetCommTimeouts(_impl->_fd, &cfg_timeout)){
     CloseHandle(_impl->_fd);
+    _impl->_fd = INVALID_HANDLE_VALUE;
     return false;
   }
 
@@ -279,6 +289,10 @@ void InterfaceSerial::serial_close(){
  * @Return: void 
  */
 void InterfaceSerial::serial_reopen(){
+  //check the value
+  if(_impl->port_name.empty()) {
+    return;
+  }
   //first close the serial 
   serial_close();
   //delay some times 

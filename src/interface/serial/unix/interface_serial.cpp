@@ -390,6 +390,7 @@ bool InterfaceSerial::serial_open(std::string port_name, int baud_rate,
   struct termios tio;
   //termios get info
   if (tcgetattr(_impl->_fd, &tio) == -1) {
+    _impl->_fd = -1;
     return false;
   }
   //set up raw mode / no echo / binary
@@ -406,12 +407,14 @@ bool InterfaceSerial::serial_open(std::string port_name, int baud_rate,
   _impl->serial_set_flowcontrol(&tio, flow_control); //set flowcontrol
   //set baudrate
   if(false == _impl->serial_set_baudrate(_impl->_fd, &tio, baud_rate)){         //set baudrate
+    _impl->_fd = -1;
     return false;
   }  
   //clear buffer
   tcflush(_impl->_fd, TCIFLUSH);
    //set flag 
   if (tcsetattr(_impl->_fd, TCSANOW, &tio) < 0) {
+    _impl->_fd = -1;
     return false;
   }             
   return true;

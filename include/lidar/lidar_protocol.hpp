@@ -36,6 +36,7 @@ typedef struct{
     double    angle;
     double    distance;
     double    intensity;
+    double    distance_raw;
     uint64_t  timestamp;
 }lidar_scan_point_t;
 //point info for 1 period 
@@ -67,8 +68,8 @@ class DLL_EXPORT LidarProtocol{
         PROTOCOL_MODEL_NORMAL_NO_QUALITY = 0x0208,                 //normal protocol no quality
         PROTOCOL_MODEL_NORMAL_HAS_QUALITY = 0x0308,                //normal protocol has quality
         PROTOCOL_MODEL_YW_HAS_QUALITY = 0x070C,                    //yw protocol has quality
-        PROTOCOL_MODEL_LD_HAS_QUAILIY = 0x2C54,                    //ld protocol has quality 
-        PROTOCOL_MODEL_ROBOROCK_HAS_QUALITY = 0xFAA0,              //roborock protocol has quality 
+        PROTOCOL_MODEL_LD_HAS_QUAILIY = 0x2C54,                    //ld protocol has quality
+        PROTOCOL_MODEL_TM21_HAS_QUAILIY = 0x030C,                  //tm21 protocol has quality
         PROTOCOL_MODEL_ERROR_FAULT = 0x8008                        //protocol error code
     }lidar_protocol_model_t;
 
@@ -78,13 +79,14 @@ class DLL_EXPORT LidarProtocol{
     //function 
     LidarProtocol();
     ~LidarProtocol();
-    void lidar_protocol_register(lidar_interface_t* api, protocol_rawdata_output_callback rawdata_output); //register communitcation api 
+    void lidar_protocol_register(lidar_interface_t* api, protocol_rawdata_output_callback rawdata_output, bool protocol_070c_raw_flag = false); //register communitcation api
     void lidar_protocol_unregister();                               //unregister 
     bool lidar_protocol_stop_scan();                                //stop motor and scan 
     bool lidar_protocol_start_scan();                               //start motor and scan 
     bool lidar_protocol_reset();                                    //reset the lidar 
     bool lidar_protocol_get_model(std::string &model);              //get the lidar model(send at startup, so you neet send reset and get the para)
-    bool lidar_protocol_get_soft_version(std::string &version);     //get the lidar software version(send at startup, so you neet send reset and get the para)
+    bool lidar_protocol_get_down_soft_version(std::string &version);  //get the lidar down board software version(send at startup, so you neet send reset and get the para)
+    bool lidar_protocol_get_up_soft_version(std::string &version);   //get the lidar up board software version(send at startup, so you neet send reset and get the para)
   private:
     LidarProtocolImpl* _impl;  //pimpl function
 };
